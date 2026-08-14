@@ -1,6 +1,6 @@
 # DSH Agent for VS Code
 
-在 VS Code 里像使用 Claude Code 一样使用 [DSH (DeepSeek Harness)](https://github.com/deepseek-ai/deepseek-harness)：一个聊天面板，DSH agent 直接在你的项目目录中工作（读写文件、执行命令、给出方案），会话自动保存在本机。
+**一切皆插件。** DSH（DeepSeek Harness）是插件驱动的 AI agent 框架——模型、工具、沙箱、会话存储、UI、甚至 agent loop 本身都是插件。本扩展把这种能力带进 VS Code：一个聊天面板，DSH agent 直接在你的项目目录中工作（读写文件、执行命令、给出方案），推理过程、工具调用、目标与任务清单实时流式呈现。会话自动保存在本机。
 
 > 实现原理：每条消息通过子进程调用 `dsh --profile headless "<任务>"`，以当前工作区目录作为 agent 的工作目录。无需常驻服务，不依赖 dsh web 的内部 API。
 
@@ -72,13 +72,18 @@
 
 **用量状态条**：输入区上方会显示「模型 · 思维强度 · 输入/输出 token · 缓存命中率 · 推理 token」，随任务实时更新（数据来自 DSH 会话日志的 usage 字段）。
 
-### DSH 模式预设与插件
+### 插件系统（一切皆插件）
 
-- **「DSH: 模式预设」**：启用/停用 DSH 原生行为预设（写入 headless profile 的 cordis.patch.yml，按 id 覆盖插件配置，下次任务生效）：
+DSH 是插件驱动的架构：模型、工具、沙箱、会话存储、UI、甚至 agent loop 本身都是插件，通过各 profile 的 `cordis.patch.yml` 组合而成。本扩展把这种能力带到 VS Code：
+
+- **「DSH: 插件中心」**：查看 headless profile 实际加载的插件（🟢 激活 / ⚪ 未激活），可安装/卸载真实存在于 npm 的 DSH 插件包（`dsh plugin --profile headless add|rm`）。
+  - headless profile 开箱即加载 **80+ 个插件行**（llm、session、agent、tool-*、goal、compaction、sandbox、skills 等）。
+  - 注：社区插件生态尚早——精选清单里的插件多数是 GitHub 仓库、尚未发布到 npm；只列出真实 npm 包为可安装项。
+- **「DSH: 模式预设」**：一键启用/停用 DSH 原生行为预设（写入 headless profile 的 cordis.patch.yml，按 id 覆盖插件配置，下次任务生效）：
   - **自动会话压缩**：长对话上下文压力达 80% 自动压缩，保留 20% 关键信息，不爆上下文
-  - **严格计划模式（中文）**：先出完整计划再动手，禁止未经批准执行变更
-- **「DSH: 插件中心」**：查看 headless profile 已安装插件（🟢 激活 / ⚪ 未激活），可安装/卸载真实存在于 npm 的 DSH 插件包。
-- 「DSH: 检查环境」会输出已装插件与预设状态。
+  - **严格计划模式**：先出完整计划再动手，禁止未经批准执行变更
+- **「DSH: 检查环境」**：输出已装插件与预设状态。
+- 相关配置文件：`~/.dsh/profiles/headless/cordis.patch.yml`（用户预设层）、`~/.dsh/profiles/headless/package.json`（`dsh.profile.bundles`）。
 
 ### 接入第三方模型 / 自建网关
 

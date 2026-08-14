@@ -1,6 +1,6 @@
 # DSH Agent for VS Code
 
-Use [DSH (DeepSeek Harness)](https://github.com/deepseek-ai/deepseek-harness) in VS Code the way you'd use Claude Code: a chat panel where the DSH agent works directly in your project (read/write files, run commands, propose solutions). Sessions are saved locally.
+**Everything is a plugin.** DSH (DeepSeek Harness) is the plugin-driven AI agent framework — models, tools, sandbox, session storage, the UI, even the agent loop itself are plugins. This extension brings that power into VS Code: a chat panel where the DSH agent works directly in your project (read/write files, run commands, propose solutions), with its reasoning, tool calls, goals and todo lists streamed live. Sessions are saved locally.
 
 > How it works: each message spawns `dsh --profile headless "<task>"` as a subprocess, with the current workspace as the agent's working directory. No long-running service, no dependency on dsh web internals.
 
@@ -74,13 +74,18 @@ If `dsh` is not on PATH, set its path manually in the `dsh-harness-vscode.cliPat
 
 **Usage bar**: above the input, shows "model · reasoning effort · input/output tokens · cache hit rate · reasoning tokens", updated live (data from DSH session logs' usage field).
 
-### DSH mode presets & plugins
+### Plugin system (everything is a plugin)
 
-- **"DSH: Mode Presets"**: enable/disable DSH native behavior presets (written to headless profile `cordis.patch.yml`, overriding plugin config by id; takes effect on next task):
+DSH is built on a plugin-driven architecture: models, tools, sandbox, session storage, the UI — even the agent loop itself — are all plugins composed via `cordis.patch.yml` in each profile. This extension surfaces that power:
+
+- **"DSH: Plugin Center"**: browse the plugins actually loaded in your headless profile (🟢 active / ⚪ inactive), and install/uninstall real npm DSH plugin packages (`dsh plugin --profile headless add|rm`).
+  - The headless profile loads **80+ plugin rows** out of the box (llm, session, agent, tool-*, goal, compaction, sandbox, skills…).
+  - Note: the community plugin ecosystem is still early — most plugins on the curated lists are GitHub repos not yet published to npm. Only real npm packages are listed as installable.
+- **"DSH: Mode Presets"**: enable/disable DSH native behavior presets with one click (written to the headless profile's `cordis.patch.yml`, overriding plugin config by id; effective on next task):
   - **Auto compaction**: long conversations auto-compact at 80% context pressure, keeping 20% key info.
-  - **Strict plan mode (Chinese)**: produce a full plan before acting; no unapproved changes.
-- **"DSH: Plugin Center"**: view installed plugins in the headless profile (🟢 active / ⚪ inactive), install/uninstall real npm DSH plugin packages.
-- **"DSH: Check Environment"** also reports installed plugins and preset status.
+  - **Strict plan mode**: produce a full plan before acting; no unapproved changes.
+- **"DSH: Check Environment"** reports installed plugins and preset status.
+- Plugin config files: `~/.dsh/profiles/headless/cordis.patch.yml` (user preset layer), `~/.dsh/profiles/headless/package.json` (`dsh.profile.bundles`).
 
 ### Third-party models / custom gateways
 

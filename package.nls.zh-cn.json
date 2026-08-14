@@ -1,5 +1,5 @@
 {
-  "description": "在 VS Code 里观看插件驱动的 AI agent 实时思考、行动与构建：DSH（DeepSeek Harness）边读代码、改代码、跑命令，边流式展示推理过程、工具调用、目标与任务清单；一键接入 OpenAI/Anthropic/Google/OpenRouter 等模型；项目长期记忆；代码直接应用到文件。无需常驻服务，配一个 API Key 即可开始。",
+  "description": "一切皆插件。在 VS Code 里观看插件驱动的 AI agent 实时思考、行动与构建：DSH（DeepSeek Harness）边读代码、改代码、跑命令，边流式展示推理过程、工具调用、目标与任务清单；一键接入 OpenAI/Anthropic/Google/OpenRouter 等模型；项目长期记忆；代码直接应用到文件。无需常驻服务，配一个 API Key 即可开始。",
   "view.status.name": "状态",
   "command.openChat": "DSH: 打开对话",
   "command.pluginCenter": "DSH: 插件中心",
