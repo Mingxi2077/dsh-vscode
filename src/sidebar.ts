@@ -67,6 +67,8 @@ class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
 
     items.push(new StatusItem(t("打开对话", "Open Chat"), { command: "dsh-harness-vscode.openChat", icon: "comment-discussion" }));
     items.push(new StatusItem(t("新建会话", "New Session"), { command: "dsh-harness-vscode.newSession", icon: "add" }));
+    items.push(new StatusItem(t("插件中心", "Plugin Center"), { command: "dsh-harness-vscode.pluginCenter", icon: "extensions" }));
+    items.push(new StatusItem(t("模式预设", "Mode Presets"), { command: "dsh-harness-vscode.presetCenter", icon: "settings-gear" }));
     items.push(new StatusItem(t("检查环境", "Check Environment"), { command: "dsh-harness-vscode.checkEnvironment", icon: "search" }));
     items.push(new StatusItem(t("兼容性自检", "Self-Test"), { command: "dsh-harness-vscode.selfTest", icon: "beaker" }));
     items.push(new StatusItem(t("查看记忆", "View Memory"), { command: "dsh-harness-vscode.showMemory", icon: "note" }));

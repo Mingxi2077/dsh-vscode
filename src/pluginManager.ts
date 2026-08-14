@@ -110,11 +110,69 @@ export interface PluginCommandResult {
   active?: boolean;
 }
 
-/** 执行 dsh plugin 子命令（add/rm）。通过 entry 模式启动 bin.js。 */
+/** 识别插件安装来源类型（npm 包名 / github: 短名 / git URL / tarball URL / 本地路径）。 */
+export function installSourceKind(input: string): "npm" | "github" | "git-url" | "url" | "path" {
+  const s = input.trim();
+  if (!s) return "npm";
+  if (s.startsWith("github:")) return "github";
+  if (s.startsWith("git+") || s.startsWith("git:") || /^[\w.-]+@[\w.-]+:/.test(s)) return "git-url";
+  if (/^https?:\/\//.test(s)) return s.endsWith(".git") ? "git-url" : "url";
+  if (/^[./\\]|^[A-Za-z]:[\\/]/.test(s)) return "path";
+  return "npm";
+}
+
+/** 从 pnpm 错误输出中提取需要允许 build 脚本的包名（onlyBuiltDependencies）。
+ * pnpm 可能把错误打到 stdout 或 stderr，两者都查。 */
+function extractBuiltAllowNames(output: string): string[] {
+  const names: string[] = [];
+  // 格式1: The git-hosted package "@scope/pkg@1.0.0" needs to execute build scripts...
+  const m1 = output.match(/"((?:@[\w.-]+\/)?[\w.-]+)@[\d.]+" needs to execute build scripts/);
+  if (m1) names.push(m1[1]);
+  // 格式2: onlyBuiltDependencies: 示例下的 "- "@scope/pkg""
+  const m2 = output.match(/onlyBuiltDependencies:\s*[\s\S]{0,60}?-\s*["']((?:@[\w.-]+\/)?[\w.-]+)["']/);
+  if (m2) names.push(m2[1]);
+  // 格式3: "Add the package to onlyBuiltDependencies" 后面最近的包名
+  const m3 = output.match(/Add the package to "onlyBuiltDependencies"[^\n]*?[\n]?onlyBuiltDependencies:\s*\n\s*-\s*["']((?:@[\w.-]+\/)?[\w.-]+)["']/);
+  if (m3) names.push(m3[1]);
+  return [...new Set(names)];
+}
+
+/** headless profile 的 pnpm-workspace.yaml 路径。 */
+export function pnpmWorkspacePath(): string {
+  const home = process.env.DSH_HOME || path.join(os.homedir(), ".dsh");
+  return path.join(home, "profiles", "headless", "pnpm-workspace.yaml");
+}
+
+/** 把包名加入 pnpm-workspace.yaml 的 onlyBuiltDependencies（git 插件 build 许可）。 */
+export function allowBuildScripts(pkgName: string, file = pnpmWorkspacePath()): boolean {
+  try {
+    let raw = fs.readFileSync(file, "utf8");
+    // 已作为独立列表项存在则跳过（无论是否 scoped）
+    const escaped = pkgName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`^\\s*-\\s*['"]?${escaped}['"]?\\s*$`, "m").test(raw)) {
+      return true;
+    }
+    // 规范化：把 "onlyBuiltDependencies:  - 'x'"（键+内联列表）拆成两行
+    raw = raw.replace(/(onlyBuiltDependencies:)\s+(-[^\n]*)/g, "$1\n  $2");
+    // 追加包名
+    if (!/^\s*onlyBuiltDependencies:/m.test(raw)) {
+      raw = raw.trimEnd() + "\n\nonlyBuiltDependencies:\n";
+    }
+    raw = raw.trimEnd() + "\n  - '" + pkgName + "'\n";
+    fs.writeFileSync(file, raw, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 执行 dsh plugin 子命令（add/rm）。通过 entry 模式启动 bin.js。
+ * 安装 git/URL 来源时若被 pnpm 的 onlyBuiltDependencies 拦截，自动加入允许列表并重试（最多 2 次）。 */
 export function runPluginCommand(
   cli: ResolvedCli,
   action: "add" | "rm",
-  packageName: string
+  packageName: string,
+  retryCount = 0
 ): Promise<PluginCommandResult> {
   return new Promise((resolve) => {
     const args =
@@ -130,7 +188,7 @@ export function runPluginCommand(
     const timer = setTimeout(() => {
       child.kill();
       resolve({ ok: false, message: `插件命令超时（${packageName}）` });
-    }, 120000);
+    }, 180000);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
@@ -152,6 +210,17 @@ export function runPluginCommand(
           active,
           message: action === "add" ? `已安装 ${packageName}${suffix}` : `已卸载 ${packageName}`,
         });
+      } else if (action === "add" && retryCount < 2 && /onlyBuiltDependencies|needs to execute build scripts|git-hosted plugins build on install/.test(stderr + "\n" + stdout)) {
+        // git/URL 插件需要 build 许可：解析包名 → 加入允许列表 → 重试
+        const names = extractBuiltAllowNames(stdout + "\n" + stderr);
+        if (names.length > 0) {
+          const allowed = names.every((n) => allowBuildScripts(n));
+          if (allowed) {
+            void runPluginCommand(cli, action, packageName, retryCount + 1).then(resolve);
+            return;
+          }
+        }
+        resolve({ ok: false, message: `安装 ${packageName} 需要 build 脚本许可但自动处理失败：${(stderr + "\n" + stdout).trim().slice(0, 200)}` });
       } else {
         resolve({ ok: false, message: `${action === "add" ? "安装" : "卸载"} ${packageName} 失败(exit ${code}): ${stderr.trim().slice(0, 300) || stdout.trim().slice(0, 300)}` });
       }

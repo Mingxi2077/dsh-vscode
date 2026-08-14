@@ -8,6 +8,9 @@ const {
   readInstalledPlugins,
   isInstalled,
   isActive,
+  installSourceKind,
+  allowBuildScripts,
+  pnpmWorkspacePath,
 } = require("../out/pluginManager.js");
 
 function tmpProfile(deps, bundles) {
@@ -92,5 +95,39 @@ test("featuredPlugin 清单与真实 npm 包名一致（抽查）", () => {
   // 这些包名来自 awesome-dsh-plugin 精选，安装时应直接可用
   for (const pkg of ["dsh-toolkit", "dsh-tool-time", "dsh-code-intel", "dsh-docker"]) {
     assert.ok(featuredPlugin(pkg), `精选清单应含 ${pkg}`);
+  }
+});
+
+test("installSourceKind：识别各种安装来源", () => {
+  assert.equal(installSourceKind("dsh-plugin-doctor"), "npm");
+  assert.equal(installSourceKind("@scope/pkg"), "npm");
+  assert.equal(installSourceKind("github:owner/repo"), "github");
+  assert.equal(installSourceKind("git+https://github.com/a/b.git"), "git-url");
+  assert.equal(installSourceKind("git@github.com:a/b.git"), "git-url");
+  assert.equal(installSourceKind("https://github.com/a/b.git"), "git-url");
+  assert.equal(installSourceKind("https://example.com/x.tgz"), "url");
+  assert.equal(installSourceKind("./my-plugin"), "path");
+  assert.equal(installSourceKind("C:\\plugins\\x"), "path");
+  assert.equal(installSourceKind("..\\relative"), "path");
+});
+
+test("allowBuildScripts：写入 onlyBuiltDependencies 且幂等", () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-plugin-"));
+  try {
+    const file = path.join(root, "pnpm-workspace.yaml");
+    fs.writeFileSync(file, "packages:\n  - .\n\nnodeLinker: hoisted\n", "utf8");
+    assert.equal(allowBuildScripts("@deepseek-ai/dsh-toolkit", file), true);
+    const raw = fs.readFileSync(file, "utf8");
+    assert.ok(raw.includes("onlyBuiltDependencies:"), "应写入 onlyBuiltDependencies");
+    assert.ok(raw.includes("@deepseek-ai/dsh-toolkit"), "应含包名");
+    // 幂等：重复调用不重复加
+    assert.equal(allowBuildScripts("@deepseek-ai/dsh-toolkit", file), true);
+    assert.equal((raw.match(/@deepseek-ai\/dsh-toolkit/g) || []).length, 1, "包名只出现一次");
+    // 追加另一个包
+    allowBuildScripts("dsh-plugin-doctor", file);
+    const raw2 = fs.readFileSync(file, "utf8");
+    assert.ok(raw2.includes("dsh-plugin-doctor"), "应追加第二个包");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

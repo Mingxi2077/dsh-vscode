@@ -7,6 +7,7 @@ import {
   runPluginCommand,
   featuredPlugin,
   isInstalled,
+  installSourceKind,
 } from "./pluginManager";
 import { ResolvedCli } from "./cli";
 import { t } from "./i18n";
@@ -15,6 +16,7 @@ import { t } from "./i18n";
 interface PluginPickItem extends vscode.QuickPickItem {
   action?: string;
   packageName?: string;
+  sourceKind?: string;
 }
 
 /** 插件中心：浏览精选插件、查看已装状态、一键安装/卸载。 */
@@ -41,6 +43,7 @@ async function showPluginBrowser(cli: ResolvedCli): Promise<void> {
       { label: t("✨ 精选可装插件", "✨ Featured installable"), kind: vscode.QuickPickItemKind.Separator },
       ...FEATURED_PLUGINS.filter((p) => !installedNames.has(p.packageName)).map((p) => makeFeaturedItem(p)),
       { label: "", kind: vscode.QuickPickItemKind.Separator },
+      { label: "$(cloud-download) " + t("从来源安装…", "Install from source…"), description: t("npm 包名 / GitHub 仓库 / git URL / 本地路径", "npm package / GitHub repo / git URL / local path"), action: "install-source" },
       { label: "$(refresh) " + t("刷新列表", "Refresh"), description: t("重新读取 headless profile 已装插件", "Reload installed plugins from the headless profile"), action: "refresh" },
     ] as PluginPickItem[],
     {
@@ -55,6 +58,10 @@ async function showPluginBrowser(cli: ResolvedCli): Promise<void> {
 
   if (action === "refresh") {
     await showPluginBrowser(cli);
+    return;
+  }
+  if (action === "install-source") {
+    await installFromSource(cli);
     return;
   }
   if (!pkg) return;
@@ -119,6 +126,59 @@ async function showPluginActions(cli: ResolvedCli, packageName: string, installe
   }
   if (action === "rm") {
     await uninstallPlugin(cli, packageName);
+  }
+}
+
+/** 从任意来源安装插件：npm 包名 / GitHub 仓库 / git URL / 本地路径。 */
+async function installFromSource(cli: ResolvedCli): Promise<void> {
+  const kindPick = await vscode.window.showQuickPick(
+    [
+      { label: t("npm 包名", "npm package name"), description: t("如 dsh-plugin-doctor", "e.g. dsh-plugin-doctor"), sourceKind: "npm" },
+      { label: t("GitHub 仓库", "GitHub repo"), description: t("如 github:owner/repo 或 owner/repo", "e.g. github:owner/repo or owner/repo"), sourceKind: "github" },
+      { label: t("git URL / tarball URL", "git URL / tarball URL"), description: t("如 git+https://… 或 https://…/*.tgz", "e.g. git+https://… or https://…/*.tgz"), sourceKind: "url" },
+      { label: t("本地路径", "Local path"), description: t("如 ./my-plugin 或 C:\\plugins\\x", "e.g. ./my-plugin or C:\\plugins\\x"), sourceKind: "path" },
+    ] as PluginPickItem[],
+    { placeHolder: t("选择安装来源", "Choose an install source") }
+  );
+  if (!kindPick) return;
+  const kind = kindPick.sourceKind as string;
+
+  const input = await vscode.window.showInputBox({
+    prompt: t("输入插件来源", "Enter the plugin source"),
+    ignoreFocusOut: true,
+    validateInput: (v) => (v && v.trim().length > 0 ? undefined : t("不能为空", "cannot be empty")),
+  });
+  if (!input) return;
+
+  const source = input.trim();
+  // github 短名：允许 owner/repo（自动补 github: 前缀）
+  const resolvedSource =
+    kind === "github" && !source.startsWith("github:") && !source.startsWith("http")
+      ? `github:${source}`
+      : source;
+  const detected = installSourceKind(resolvedSource);
+  const kindLabel = { npm: t("npm 包", "npm package"), github: t("GitHub 仓库", "GitHub repo"), "git-url": t("git URL", "git URL"), url: t("URL", "URL"), path: t("本地路径", "local path") }[detected];
+
+  const confirm = await vscode.window.showWarningMessage(
+    t(
+      `将从「${kindLabel}」安装 ${resolvedSource} 到 headless profile。继续？`,
+      `Install ${resolvedSource} from "${kindLabel}" into the headless profile? Continue?`
+    ),
+    { modal: true },
+    t("安装", "Install")
+  );
+  if (confirm !== t("安装", "Install")) return;
+
+  const progress = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", resolvedSource) },
+    async () => runPluginCommand(cli, "add", resolvedSource)
+  );
+  if (progress.ok) {
+    void vscode.window.showInformationMessage(
+      `${progress.message}${progress.active === true ? t("（已激活，重载窗口后生效）", " (activated, effective after window reload)") : t("（注意：可能未激活）", " (note: may not be activated)")}`
+    );
+  } else {
+    void vscode.window.showErrorMessage(progress.message);
   }
 }
 
