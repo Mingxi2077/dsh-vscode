@@ -274,11 +274,11 @@
       }
       case "reasoning":
         if (!live.reasoning.has(msg.key)) live.order.push("reasoning:" + msg.key);
-        live.reasoning.set(msg.key, msg.text);
+        live.reasoning.set(msg.key, (live.reasoning.get(msg.key) || "") + msg.text);
         break;
       case "text":
         if (!live.texts.has(msg.key)) live.order.push("text:" + msg.key);
-        live.texts.set(msg.key, msg.text);
+        live.texts.set(msg.key, (live.texts.get(msg.key) || "") + msg.text);
         break;
       case "assistant": {
         // 完整快照：权威替换各块（用独立 snap- 前缀键，避免与 chunk 键冲突）
