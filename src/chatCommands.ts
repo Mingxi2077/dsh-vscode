@@ -158,11 +158,11 @@ async function pickProvider(host: ChatCommandHost): Promise<void> {
   const picks = await vscode.window.showQuickPick(
     [
       // --- 官方内置（填 Key 即用） ---
-      { label: "✨ 官方内置提供商（填 Key 即用）", kind: vscode.QuickPickItemKind.Separator },
+      { label: t("✨ 官方内置提供商（填 Key 即用）", "✨ Built-in providers (add a key)"), kind: vscode.QuickPickItemKind.Separator },
       ...CATALOG_PICKS(raw, configuredIds),
       // --- 已配置 ---
-      { label: "🛠 已配置的提供商", kind: vscode.QuickPickItemKind.Separator },
-      { label: DEEPSEEK_PROVIDER.displayName, description: DEEPSEEK_PROVIDER.id, detail: "DSH 出厂自带，无需配置", providerId: DEEPSEEK_PROVIDER.id },
+      { label: t("🛠 已配置的提供商", "🛠 Configured providers"), kind: vscode.QuickPickItemKind.Separator },
+      { label: DEEPSEEK_PROVIDER.displayName, description: DEEPSEEK_PROVIDER.id, detail: t("DSH 出厂自带，无需配置", "Built into DSH, nothing to configure"), providerId: DEEPSEEK_PROVIDER.id },
       ...custom.map((p) => ({
         label: p.displayName || p.id,
         description: p.id,
@@ -171,9 +171,9 @@ async function pickProvider(host: ChatCommandHost): Promise<void> {
       })),
       // --- 手动添加 ---
       { label: "", kind: vscode.QuickPickItemKind.Separator },
-      { label: "$(add) 手动添加自定义提供商…", description: "自建网关 / 中转（OpenAI 兼容或 Anthropic 协议）", providerId: "__add__" },
+      { label: "$(add) " + t("手动添加自定义提供商…", "Add custom provider…"), description: t("自建网关 / 中转（OpenAI 兼容或 Anthropic 协议）", "Self-hosted gateway / relay (OpenAI-compatible or Anthropic protocol)"), providerId: "__add__" },
     ],
-    { placeHolder: "选择模型提供商" }
+    { placeHolder: t("选择模型提供商", "Choose a model provider") }
   );
   if (!picks || !picks.providerId) return;
 
@@ -199,9 +199,9 @@ function CATALOG_PICKS(raw: string, configuredIds: Set<string>) {
   return CATALOG_PROVIDERS.map((p) => {
     const configured = configuredIds.has(p.id) || hasProvider(raw, p.id);
     return {
-      label: configured ? p.displayName : `${p.displayName}（一键接入）`,
+      label: configured ? p.displayName : `${p.displayName}（${t("一键接入", "one-click")}）`,
       description: p.id,
-      detail: `${p.apiKeyEnv ?? "无需 Key"}${configured ? " · 已配置" : ""}${p.note ? ` · ${p.note}` : ""}`,
+      detail: `${p.apiKeyEnv ?? t("无需 Key", "no key needed")}${configured ? " · " + t("已配置", "configured") : ""}${p.note ? ` · ${p.note}` : ""}`,
       providerId: p.id,
     };
   });
@@ -214,9 +214,12 @@ async function selectProvider(host: ChatCommandHost, provider: ProviderInfo): Pr
   const needWrite = !hasProvider(raw, provider.id);
   if (needWrite && isCatalog && provider.apiKeyEnv) {
     const go = await vscode.window.showInformationMessage(
-      `将把 ${provider.displayName}（${provider.id}）写入 ~/.dsh/settings.yaml 的 llm-pi-ai.providers（只需 apiKeyEnv，模型由 DSH 目录提供）。继续？`,
+      t(
+        `将把 ${provider.displayName}（${provider.id}）写入 ~/.dsh/settings.yaml 的 llm-pi-ai.providers（只需 apiKeyEnv，模型由 DSH 目录提供）。继续？`,
+        `Write ${provider.displayName} (${provider.id}) into llm-pi-ai.providers in ~/.dsh/settings.yaml (apiKeyEnv only; models come from the DSH catalog). Continue?`
+      ),
       { modal: true },
-      "继续"
+      t("继续", "Continue")
     );
     if (!go) return;
     const res = writeProviderToSettings(catalogProfile(provider.id, provider.apiKeyEnv, provider.displayName));
@@ -232,17 +235,17 @@ async function selectProvider(host: ChatCommandHost, provider: ProviderInfo): Pr
     const existing = await host.getEnvSecret(envName);
     const act = await vscode.window.showQuickPick(
       [
-        { label: "设置 API Key", description: existing ? "当前已配置（保存在系统密钥链）" : "尚未配置" },
-        { label: "跳过（使用环境变量 / DSH 凭证）", description: "" },
+        { label: t("设置 API Key", "Set API Key"), description: existing ? t("当前已配置（保存在系统密钥链）", "already set (system keychain)") : t("尚未配置", "not set") },
+        { label: t("跳过（使用环境变量 / DSH 凭证）", "Skip (use env var / DSH credentials)"), description: "" },
       ],
-      { placeHolder: `${provider.displayName} 需要 API Key（${envName}）` }
+      { placeHolder: `${provider.displayName} ` + t("需要 API Key（{0}）", "needs an API Key ({0})").replace("{0}", envName) }
     );
-    if (act?.label.startsWith("设置")) {
+    if (act?.label.startsWith(t("设置", "Set"))) {
       const key = await vscode.window.showInputBox({
-        prompt: `输入 API Key（${envName}）`,
+        prompt: t("输入 API Key（{0}）", "Enter API Key ({0})").replace("{0}", envName),
         password: true,
         ignoreFocusOut: true,
-        validateInput: (v) => (v && v.trim().length > 0 ? undefined : "不能为空"),
+        validateInput: (v) => (v && v.trim().length > 0 ? undefined : t("不能为空", "cannot be empty")),
       });
       if (key) await host.setEnvSecret(envName, key.trim());
     }
@@ -257,7 +260,7 @@ async function selectProvider(host: ChatCommandHost, provider: ProviderInfo): Pr
   host.post({
     type: "appendMessage",
     message: host.systemMessage(
-      `提供商已切换：${provider.displayName}（${provider.id}）。下一步用 /model 选模型。`
+      tf(t("提供商已切换：{0}（{1}）。下一步用 /model 选模型。", "Provider switched to {0} ({1}). Next, use /model to pick a model."), provider.displayName, provider.id)
     ),
   });
 }

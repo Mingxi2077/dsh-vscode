@@ -18,6 +18,9 @@ export interface PresetDef {
   id: PresetId;
   name: string;
   description: string;
+  /** 英文名/描述（国际化展示用）。 */
+  enName?: string;
+  enDescription?: string;
   /** 该预设覆盖的插件 id。 */
   targets: string[];
 }
@@ -27,12 +30,16 @@ export const PRESETS: PresetDef[] = [
     id: "auto-compact",
     name: "自动会话压缩",
     description: "启用 DSH 自动压缩：上下文压力达到阈值（80%）时自动压缩历史，保留 20% 关键信息，长对话不爆上下文",
+    enName: "Auto compaction",
+    enDescription: "Enable DSH auto-compaction: at 80% context pressure, compress history automatically, keeping 20% key info — long conversations never blow the context.",
     targets: ["compaction-basic"],
   },
   {
     id: "strict-plan",
     name: "严格计划模式（中文）",
     description: "覆盖 plan-mode 指令为中文强化版：先出完整计划再动手，禁止未经批准执行变更",
+    enName: "Strict plan mode (Chinese)",
+    enDescription: "Override plan-mode instructions with a Chinese, more rigorous version: produce a full plan before acting, no unapproved changes.",
     targets: ["plan-mode"],
   },
 ];
@@ -107,11 +114,11 @@ function renderPresetEntry(preset: PresetDef): string {
 export function enablePreset(
   id: PresetId,
   file = profilePatchPath()
-): { ok: boolean; message: string } {
+): { ok: boolean; message: string; presetName?: string; enPresetName?: string } {
   const preset = presetById(id);
-  if (!preset) return { ok: false, message: `未知预设：${id}` };
+  if (!preset) return { ok: false, message: `unknown preset: ${id}` };
   if (isPresetEnabled(id, file)) {
-    return { ok: true, message: `预设「${preset.name}」已启用` };
+    return { ok: true, message: "already-enabled", presetName: preset.name, enPresetName: preset.enName };
   }
   const raw = readPatch(file);
   const entry = renderPresetEntry(preset);
@@ -119,9 +126,9 @@ export function enablePreset(
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, next, "utf8");
-    return { ok: true, message: `已启用预设「${preset.name}」` };
+    return { ok: true, message: "enabled", presetName: preset.name, enPresetName: preset.enName };
   } catch (err) {
-    return { ok: false, message: `写入 cordis.patch.yml 失败：${err instanceof Error ? err.message : String(err)}` };
+    return { ok: false, message: `write cordis.patch.yml failed: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 
@@ -129,20 +136,20 @@ export function enablePreset(
 export function disablePreset(
   id: PresetId,
   file = profilePatchPath()
-): { ok: boolean; message: string } {
+): { ok: boolean; message: string; presetName?: string; enPresetName?: string } {
   const preset = presetById(id);
-  if (!preset) return { ok: false, message: `未知预设：${id}` };
+  if (!preset) return { ok: false, message: `unknown preset: ${id}` };
   if (!isPresetEnabled(id, file)) {
-    return { ok: true, message: `预设「${preset.name}」未启用` };
+    return { ok: true, message: "not-enabled", presetName: preset.name, enPresetName: preset.enName };
   }
   const raw = readPatch(file);
   const next = removePresetFromPatch(raw, id);
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, next, "utf8");
-    return { ok: true, message: `已停用预设「${preset.name}」` };
+    return { ok: true, message: "disabled", presetName: preset.name, enPresetName: preset.enName };
   } catch (err) {
-    return { ok: false, message: `写入 cordis.patch.yml 失败：${err instanceof Error ? err.message : String(err)}` };
+    return { ok: false, message: `write cordis.patch.yml failed: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 

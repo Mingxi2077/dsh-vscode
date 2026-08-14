@@ -286,48 +286,48 @@ export function activate(context: vscode.ExtensionContext): void {
     // 环境自检：普通用户装完第一步就运行它
     vscode.commands.registerCommand("dsh-harness-vscode.checkEnvironment", async () => {
       output.clear();
-      output.appendLine("DSH 环境检查");
+      output.appendLine(t("DSH 环境检查", "DSH Environment Check"));
       output.appendLine("==============");
       try {
         const cli = await cliProvider();
-        output.appendLine(`dsh 定位: ${cli.source}`);
-        output.appendLine(cli.kind === "entry" ? `入口文件: ${cli.entry}` : `可执行文件: ${cli.command}`);
+        output.appendLine(t("dsh 定位: {0}", "dsh location: {0}").replace("{0}", cli.source));
+        output.appendLine(cli.kind === "entry" ? t("入口文件: {0}", "entry file: {0}").replace("{0}", cli.entry) : t("可执行文件: {0}", "executable: {0}").replace("{0}", cli.command));
         const version = await runCliVersion(cli);
-        output.appendLine(`版本: ${version || "未知"}`);
+        output.appendLine(t("版本: {0}", "version: {0}").replace("{0}", version || t("未知", "unknown")));
         const key = await apiKeyStatus(secrets);
         output.appendLine(`API Key: ${key}`);
         const permMode = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
-        output.appendLine(`沙箱模式: ${permMode}（无交互 headless 下审批失败关闭，无法自我越权）`);
+        output.appendLine(t("沙箱模式: {0}（无交互 headless 下审批失败关闭，无法自我越权）", "sandbox: {0} (headless has no interactive answerer, so approvals fail closed)").replace("{0}", permMode));
         if (permMode === "danger-full-access") {
-          void vscode.window.showWarningMessage("⚠ 沙箱模式为 danger-full-access：dsh 将不受限操作且审批自动放行，请确保任务可信。");
+          void vscode.window.showWarningMessage(t("⚠ 沙箱模式为 danger-full-access：dsh 将不受限操作且审批自动放行，请确保任务可信。", "⚠ Sandbox is danger-full-access: dsh operates unrestricted with auto-approval. Only if you fully trust the task."));
         }
         output.appendLine("");
-        output.appendLine("Provider 配置检查：");
+        output.appendLine(t("Provider 配置检查：", "Provider config check:"));
         output.appendLine(`  settings.yaml: ${settingsPath()}`);
         const providerCheck = checkProviderConfig();
         for (const line of providerCheck) output.appendLine(`  ${line}`);
         output.appendLine("");
-        output.appendLine("headless 插件：");
+        output.appendLine(t("headless 插件：", "headless plugins:"));
         for (const line of pluginStatusSummary()) output.appendLine(`  ${line}`);
         output.appendLine("");
-        output.appendLine("模式预设：");
+        output.appendLine(t("模式预设：", "mode presets:"));
         for (const line of presetStatusSummary()) output.appendLine(`  ${line}`);
         output.appendLine("");
-        output.appendLine("检查通过。打开项目后执行「DSH: 打开对话」即可开始。");
+        output.appendLine(t("检查通过。打开项目后执行「DSH: 打开对话」即可开始。", "Check passed. Open a project and run \"DSH: Open Chat\" to start."));
         output.show(true);
-        status.setReady(true, `DSH ${version} 已就绪`);
-        void vscode.window.showInformationMessage(`DSH ${version} 已就绪（API Key ${key.startsWith("已配置") ? "✓" : "✗"}）`);
+        status.setReady(true, `DSH ${version} ` + t("已就绪", "ready"));
+        void vscode.window.showInformationMessage(`DSH ${version} ` + t("已就绪", "ready") + ` (API Key ${key.startsWith(t("已配置", "configured")) ? "✓" : "✗"})`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        output.appendLine(`检查失败: ${message}`);
+        output.appendLine(t("检查失败: {0}", "Check failed: {0}").replace("{0}", message));
         output.appendLine("");
-        output.appendLine("请确认：");
-        output.appendLine("  1. 已全局安装 dsh：npm i -g @deepseek-ai/dsh");
-        output.appendLine("  2. dsh 在 PATH 中（新开一个终端执行 dsh --version 验证）");
-        output.appendLine("  3. 或在本扩展设置 dsh-harness-vscode.cliPath 中指定 dsh 路径");
+        output.appendLine(t("请确认：", "Please confirm:"));
+        output.appendLine("  1. " + t("已全局安装 dsh：npm i -g @deepseek-ai/dsh", "dsh installed globally: npm i -g @deepseek-ai/dsh"));
+        output.appendLine("  2. " + t("dsh 在 PATH 中（新开一个终端执行 dsh --version 验证）", "dsh on PATH (open a new terminal and run dsh --version)"));
+        output.appendLine("  3. " + t("或在本扩展设置 dsh-harness-vscode.cliPath 中指定 dsh 路径", "or set the dsh path in the dsh-harness-vscode.cliPath setting"));
         output.show(true);
-        status.setReady(false, "DSH: 环境异常，运行「DSH: 检查环境」查看详情");
-        void vscode.window.showErrorMessage(`DSH 环境检查失败：${message}`);
+        status.setReady(false, "DSH: " + t("环境异常，运行「DSH: 检查环境」查看详情", "environment issue — run \"DSH: Check Environment\" for details"));
+        void vscode.window.showErrorMessage(t("DSH 环境检查失败：{0}", "DSH environment check failed: {0}").replace("{0}", message));
       }
     }),
 
@@ -336,9 +336,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const folder = await pickFolder();
       if (!folder) return;
       output.clear();
-      output.appendLine("DSH 兼容性自检");
+      output.appendLine(t("DSH 兼容性自检", "DSH Compatibility Self-Test"));
       output.appendLine("================");
-      void vscode.window.showInformationMessage("DSH 兼容性自检进行中…（约 10-20 秒）");
+      void vscode.window.showInformationMessage(t("DSH 兼容性自检进行中…（约 10-20 秒）", "DSH compatibility self-test running… (10-20s)"));
       try {
         const cli = await cliProvider();
         const env = await envProvider();
@@ -351,7 +351,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const modelPatch = sel ? writeModelPatch(context.globalStorageUri.fsPath, stableHash(folder.uri.fsPath), sel) : undefined;
         if (modelPatch) extraArgs.push("--patch", modelPatch);
 
-        const args = buildSpawnArgs(cli, extraArgs, "请只回复两个字：好的");
+        const args = buildSpawnArgs(cli, extraArgs, t("请只回复两个字：好的", "Please reply with just: OK"));
         const result = await runDsh(cli, args, {
           cwd: folder.uri.fsPath,
           timeoutMs: 90000,
@@ -361,31 +361,31 @@ export function activate(context: vscode.ExtensionContext): void {
         const after = walkFiles(sessionsDir);
         const newLog = after.find((f) => f.endsWith("session.jsonl") && !before.has(f));
 
-        output.appendLine(`任务执行: ${result.code === 0 ? "✓ exit 0" : `✗ exit ${result.code}`}`);
+        output.appendLine(t("任务执行: {0}", "task run: {0}").replace("{0}", result.code === 0 ? "✓ exit 0" : `✗ exit ${result.code}`));
         if (result.stderr.trim()) output.appendLine(`  stderr: ${result.stderr.trim().slice(0, 300)}`);
-        output.appendLine(`流式补丁（明文会话日志）: ${newLog ? "✓ 已生成" : "✗ 未生成（流式将不可用）"}`);
-        if (newLog) output.appendLine(`  日志: ${newLog}`);
-        if (sel) output.appendLine(`模型补丁: 已随任务传入（${sel.provider}/${sel.model}），若任务成功即生效`);
+        output.appendLine(t("流式补丁（明文会话日志）: {0}", "streaming patch (plain session log): {0}").replace("{0}", newLog ? t("✓ 已生成", "✓ generated") : t("✗ 未生成（流式将不可用）", "✗ not generated (streaming unavailable)")));
+        if (newLog) output.appendLine(t("  日志: {0}", "  log: {0}").replace("{0}", newLog));
+        if (sel) output.appendLine(t("模型补丁: 已随任务传入（{0}/{1}），若任务成功即生效", "model patch: passed with task ({0}/{1}), effective if task succeeds").replace("{0}", sel.provider).replace("{1}", sel.model));
         output.appendLine("");
         output.appendLine(
           result.code === 0 && newLog
-            ? "自检通过：流式与模型机制正常。"
-            : "自检发现问题，请把以上输出反馈给维护者。"
+            ? t("自检通过：流式与模型机制正常。", "Self-test passed: streaming & model mechanisms OK.")
+            : t("自检发现问题，请把以上输出反馈给维护者。", "Self-test found issues; please share the output above with the maintainer.")
         );
         output.show(true);
         if (result.code === 0 && newLog) {
-          status.setReady(true, "DSH 兼容性自检通过");
-          void vscode.window.showInformationMessage("DSH 兼容性自检通过。");
+          status.setReady(true, t("DSH 兼容性自检通过", "DSH compatibility self-test passed"));
+          void vscode.window.showInformationMessage(t("DSH 兼容性自检通过。", "DSH compatibility self-test passed."));
         } else {
-          status.setReady(false, "DSH: 兼容性自检失败，查看输出面板 DSH");
-          void vscode.window.showErrorMessage("DSH 兼容性自检失败，请查看输出面板（DSH）。");
+          status.setReady(false, t("DSH: 兼容性自检失败，查看输出面板 DSH", "DSH: self-test failed, see DSH output panel"));
+          void vscode.window.showErrorMessage(t("DSH 兼容性自检失败，请查看输出面板（DSH）。", "DSH compatibility self-test failed — see the DSH output panel."));
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        output.appendLine(`自检异常: ${message}`);
+        output.appendLine(t("自检异常: {0}", "self-test error: {0}").replace("{0}", message));
         output.show(true);
-        status.setReady(false, "DSH: 自检异常");
-        void vscode.window.showErrorMessage(`DSH 兼容性自检异常：${message}`);
+        status.setReady(false, t("DSH: 自检异常", "DSH: self-test error"));
+        void vscode.window.showErrorMessage(t("DSH 兼容性自检异常：{0}", "DSH compatibility self-test error: {0}").replace("{0}", message));
       }
     }),
 
