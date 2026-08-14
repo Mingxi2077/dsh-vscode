@@ -1,4 +1,4 @@
-# DSH for VS Code
+# DSH Agent for VS Code
 
 在 VS Code 里像使用 Claude Code 一样使用 [DSH (DeepSeek Harness)](https://github.com/deepseek-ai/deepseek-harness)：一个聊天面板，DSH agent 直接在你的项目目录中工作（读写文件、执行命令、给出方案），会话自动保存在本机。
 
