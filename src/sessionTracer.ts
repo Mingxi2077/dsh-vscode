@@ -29,7 +29,7 @@ interface JsonlRecord {
 }
 
 /** 把 DSH 会话事件日志（明文 JSONL）实时 tail 成进度消息。
- * 会话目录结构：$DSH_HOME/sessions/<bucket>/session-<uuid>/session.jsonl */
+ * 会话目录结构：$DSH_HOME/sessions-vscode/<bucket>/session-<uuid>/session.jsonl */
 export class SessionTracer {
   private readonly sessionsDir: string;
   private readonly snapshot: Set<string>;
@@ -146,16 +146,20 @@ export class SessionTracer {
 
       if (signal.aborted) return;
       if (this.finished) {
-        // 排空剩余记录后结束
+        // 排空剩余记录（含未换行的残行）后结束
         await sleep(300);
         try {
           const data = fs.readFileSync(file);
-          const rest = data.toString("utf8", offset);
+          const rest = buffer + data.toString("utf8", offset);
+          buffer = "";
           for (const line of rest.split("\n")) {
             const trimmed = line.trim();
             if (trimmed) {
               const msg = this.parseLine(trimmed);
-              if (msg) onMessage(msg);
+              if (msg) {
+                this.eventsParsed += 1;
+                onMessage(msg);
+              }
             }
           }
         } catch {

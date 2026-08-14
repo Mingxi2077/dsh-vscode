@@ -81,7 +81,7 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
   if (cliPath && cliPath.trim().length > 0) {
     const p = path.resolve(cliPath.trim());
     if (!fs.existsSync(p)) {
-      throw new Error(`配置的 dsh.cliPath 不存在: ${p}`);
+      throw new Error(`配置的 dsh-harness-vscode.cliPath 不存在: ${p}`);
     }
     if (p.toLowerCase().endsWith(".js")) {
       return { kind: "entry", node: await resolveNodeBinary(), entry: p, source: "配置(dsh-harness-vscode.cliPath)" };
