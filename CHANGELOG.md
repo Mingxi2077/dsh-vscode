@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.2 (2026-08-15)
+
+### Fixed
+
+- **i18n: task template language was inverted**: with an English VS Code UI, the prompt injected into the DSH agent was still Chinese (so the agent replied in Chinese). The `zh` flag was passed inverted; it now follows the UI language — English UI gets English agent instructions and English replies.
+
 ## 0.9.1 (2026-08-15)
 
 ### Fixed

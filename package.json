@@ -2,7 +2,7 @@
   "name": "dsh-harness-vscode",
   "displayName": "DSH Agent for VS Code",
   "description": "%description%",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "publisher": "mingxi2077",
   "license": "MIT",
   "icon": "media/icon.png",
