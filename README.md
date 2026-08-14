@@ -4,6 +4,16 @@
 
 > 实现原理：每条消息通过子进程调用 `dsh --profile headless "<任务>"`，以当前工作区目录作为 agent 的工作目录。无需常驻服务，不依赖 dsh web 的内部 API。
 
+## 截图
+
+| 聊天面板 | 思维链与工具调用 |
+|---|---|
+| ![chat-panel](https://raw.githubusercontent.com/Mingxi2077/dsh-vscode/main/media/screenshots/chat-panel.png) | ![tool-trail](https://raw.githubusercontent.com/Mingxi2077/dsh-vscode/main/media/screenshots/tool-trail.png) |
+
+| 完整会话界面 |
+|---|
+| ![full-session](https://raw.githubusercontent.com/Mingxi2077/dsh-vscode/main/media/screenshots/full-session.png) |
+
 ---
 
 ## 快速开始（普通用户，无需源码、无需编译）

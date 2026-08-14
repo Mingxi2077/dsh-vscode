@@ -13,7 +13,8 @@
 
 ### 新增
 
-- **市场展示**：扩展包新增 3 张商店截图（聊天面板、思维链与工具调用轨迹、完整会话界面）随 VSIX 发布，市场页自动展示；新增 galleryBanner 深色横幅主题。
+- **市场展示**：README 顶部新增 3 张截图（聊天面板、思维链与工具调用轨迹、完整会话界面），随 README 在市场页与 GitHub 展示；galleryBanner 深色横幅主题。
+  - 注：Marketplace 商店页的正式截图需在 [管理页](https://marketplace.visualstudio.com/manage) Overview → Add screenshot 手动上传（扩展清单的 `screenshots` 字段市场不识别）。
 - **思维链按步骤细分**：流式进度展示「第 N 轮 · 第 M 步」，每步思考独立成段，接近 Claude Code 的分步体验。
 - **目标（goals）流式呈现**：DSH 创建/更新/完成目标时实时展示目标卡片（🎯 ✏️ ⏸ ▶️ ✅ 🚧），并保留到最终思维链轨迹。
 - **任务清单（todo）流式呈现**：DSH 使用 todo 工具规划任务时，实时展示可勾选的任务清单（✅ 完成 / 🔄 进行中 / ⬜ 待办），随执行进度更新。

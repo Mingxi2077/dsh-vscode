@@ -10,17 +10,6 @@
     "color": "#0f172a",
     "theme": "dark"
   },
-  "screenshots": [
-    {
-      "path": "media/screenshots/chat-panel.png"
-    },
-    {
-      "path": "media/screenshots/tool-trail.png"
-    },
-    {
-      "path": "media/screenshots/full-session.png"
-    }
-  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/Mingxi2077/dsh-vscode"
