@@ -84,6 +84,15 @@ export function isCatalogProvider(id: string): boolean {
   return !!catalogProviderById(id);
 }
 
+/** 友好显示名：catalog 用内置 displayName，自定义用 settings 里的，默认回退 id。 */
+export function providerDisplayName(providerId: string, settingsPath = defaultSettingsPath()): string {
+  if (providerId === DEEPSEEK_PROVIDER.id) return DEEPSEEK_PROVIDER.displayName;
+  const cat = catalogProviderById(providerId);
+  if (cat) return cat.displayName;
+  const cp = readCustomProviders(settingsPath).find((p) => p.id === providerId);
+  return cp?.displayName || providerId;
+}
+
 export function defaultSettingsPath(): string {
   return path.join(os.homedir(), ".dsh", "settings.yaml");
 }

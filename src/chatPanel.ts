@@ -18,6 +18,7 @@ import {
   saveSelection,
   writeModelPatch,
   readDefaultEffort,
+  providerDisplayName,
 } from "./modelSelection";
 import { refreshSidebarStatus } from "./sidebar";
 
@@ -694,7 +695,7 @@ export class ChatPanel {
 
   statusLine(): string {
     const sel = this.selection;
-    const provider = sel?.provider ?? "（DSH 默认）";
+    const provider = sel?.provider ? providerDisplayName(sel.provider) : "（DSH 默认）";
     const model = sel?.model ?? "（DSH 默认）";
     const effort = this.effectiveEffort() ?? "未设置";
     const skills = this.enabledSkills.length ? this.enabledSkills.join("、") : "无";

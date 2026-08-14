@@ -46,12 +46,18 @@ test("upsertProvider：追加到已有 providers（保留既有条目）", () =>
   assert.ok(next.includes("      apiKeyEnv: OPENAI_API_KEY"), "新条目含 apiKeyEnv");
 });
 
-test("upsertProvider：替换已有同名 provider", () => {
+test("upsertProvider：替换已有同名 provider（缩进正确，4 空格）", () => {
   const raw = "llm-pi-ai:\n  providers:\n    openai:\n      apiKeyEnv: OLD_KEY\n      models:\n        - id: old\n";
-  const next = upsertProvider(raw, { id: "openai", apiKeyEnv: "OPENAI_API_KEY" });
+  const next = upsertProvider(raw, { id: "openai", apiKeyEnv: "OPENAI_API_KEY", displayName: "OpenAI" });
   assert.ok(!next.includes("OLD_KEY"), "旧 apiKeyEnv 应被替换");
   assert.ok(!next.includes("old"), "旧 models 应被移除");
-  assert.ok(next.includes("      apiKeyEnv: OPENAI_API_KEY"), "新 apiKeyEnv 生效");
+  // 精确验证缩进：provider 必须位于 4 空格，字段 6 空格（8/10 空格是无效 YAML）
+  assert.ok(next.includes("    openai:"), "provider 应为 4 空格缩进");
+  assert.ok(next.includes("      apiKeyEnv: OPENAI_API_KEY"), "apiKeyEnv 应为 6 空格缩进");
+  assert.ok(next.includes("      displayName: OpenAI"), "displayName 应为 6 空格缩进");
+  assert.ok(!next.includes("        openai:"), "不应出现 8 空格缩进（双重缩进 bug）");
+  // 后续结构未被破坏
+  assert.ok(next.includes("  providers:"), "providers 仍在");
 });
 
 test("hasProvider：识别 llm-pi-ai.providers 内的条目", () => {

@@ -112,16 +112,19 @@ export function upsertProvider(raw: string, profile: LlmProviderProfile): string
   }
 
   if (providerStart >= 0) {
-    // 替换已有块
-    const indent = "    ";
-    const newBlock = renderProviderBlock(profile).split(/\r?\n/).map((l) => (l ? indent + l : l));
+    // 替换已有块（renderProviderBlock 已带 4 空格缩进，直接使用）
+    const newBlock = renderProviderBlock(profile).split(/\r?\n/);
     lines.splice(providerStart, providerEnd - providerStart, ...newBlock);
     return lines.join("\n");
   }
 
   // 追加到 providers 段末尾
   let insertAt = providersIndex + 1;
-  while (insertAt < lines.length && (lines[insertAt].trim() === "" || (lines[insertAt].match(/^ */)?.[0].length ?? 0) > 2)) {
+  // 跳过 providers 段内所有内容（含嵌套模型、注释、空行），直到离开该段（缩进 <=2 或文件尾）
+  while (insertAt < lines.length) {
+    const l = lines[insertAt];
+    const ind = (l.match(/^ */)?.[0].length ?? 0);
+    if (l.trim() !== "" && ind <= 2) break; // 缩进 0/2 的非空行 = 离开 providers 段
     insertAt++;
   }
   lines.splice(insertAt, 0, ...block.split(/\r?\n/));
