@@ -182,7 +182,7 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
 }
 
 /** 翻译 runPluginCommand 的英文返回消息为当前语言（成功/失败都翻译）。 */
-function localizePluginResult(pkg: string, res: { ok: boolean; message: string; active?: boolean }): string {
+function localizePluginResult(pkg: string, res: { ok: boolean; message: string; active?: boolean; kind?: string; missingDep?: string; detail?: string }): string {
   const msg = res.message;
   // 成功
   if (res.ok) {
@@ -195,6 +195,21 @@ function localizePluginResult(pkg: string, res: { ok: boolean; message: string; 
     return msg;
   }
   // 失败
+  if (res.kind === "dep404") {
+    const dep = res.missingDep ? `"${res.missingDep}"` : t("某个依赖", "a dependency");
+    const body = res.detail ? `\n\n${res.detail}` : "";
+    return t(
+      `安装 ${pkg} 失败：依赖 ${dep} 未发布到 npm（404），当前无法安装。请反馈给插件作者，或换用其它插件。${body}`,
+      `Installing ${pkg} failed: dependency ${dep} is not published on npm (404), so it cannot be installed right now. Report it to the plugin author or try another plugin.${body}`
+    );
+  }
+  if (res.kind === "network") {
+    const body = res.detail ? `\n\n${res.detail}` : "";
+    return t(
+      `插件操作失败：网络错误，无法连接 npm 仓库。请检查网络/代理后重试。${body}`,
+      `Plugin operation failed: network error while contacting the npm registry. Check your connection/proxy and retry.${body}`
+    );
+  }
   if (msg.startsWith("install") && msg.includes("build-script permission")) {
     return t(
       `安装 ${pkg} 需要 build 脚本许可但自动处理失败。请重试，或查看 DSH 输出面板。`,

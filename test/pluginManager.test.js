@@ -142,3 +142,58 @@ test("extractBuiltAllowNames：从真实 pnpm 错误提取包名", () => {
   // 无 build 错误时返回空（避免误判）
   assert.deepEqual(extractBuiltAllowNames("dsh: git-hosted plugins build on install via their prepare script"), []);
 });
+
+test("analyzePluginError：识别 npm 404（npmmirror CDN 路径）并提取依赖名", () => {
+  const { analyzePluginError } = require("../out/pluginManager.js");
+  const out = [
+    "npm error code ETARGET",
+    "npm error 404 Not Found - GET https://cdn.npmmirror.com/packages/%40deepseek-ai/dsh-type-meta/0.0.1-rc.1",
+    "npm error 404",
+    "npm error  A complete log of this run can be found in: ...",
+  ].join("\n");
+  const a = analyzePluginError(out, "");
+  assert.equal(a.kind, "dep404");
+  assert.equal(a.missingDep, "@deepseek-ai/dsh-type-meta");
+  assert.ok(a.lines.some((l) => l.includes("404 Not Found")), "应保留真实 404 行");
+  assert.ok(a.lines.every((l) => l.length <= 200), "行应限长");
+});
+
+test("analyzePluginError：识别 npm 404（官方 registry %2f 形式）", () => {
+  const { analyzePluginError } = require("../out/pluginManager.js");
+  const a = analyzePluginError("", "npm error 404 Not Found - GET https://registry.npmjs.org/@deepseek-ai%2fdsh-type-meta - Not found");
+  assert.equal(a.kind, "dep404");
+  assert.equal(a.missingDep, "@deepseek-ai/dsh-type-meta");
+});
+
+test("analyzePluginError：识别网络错误（超时/不可达）", () => {
+  const { analyzePluginError } = require("../out/pluginManager.js");
+  const a = analyzePluginError(
+    "",
+    "pnpm error ERR_PNPM_FETCH_503 request to https://registry.npmjs.org/... failed, reason: connect ETIMEDOUT 104.16.24.34:443"
+  );
+  assert.equal(a.kind, "network");
+  assert.ok(a.lines.some((l) => l.includes("ETIMEDOUT")), "应保留网络错误行");
+});
+
+test("analyzePluginError：过滤 DSH 误导提示行，保留真实错误", () => {
+  const { analyzePluginError } = require("../out/pluginManager.js");
+  const out = [
+    "dsh: git-hosted plugins build on install via their prepare script",
+    "dsh: add the exact key pnpm printed above",
+    "pnpm error ERR_PNPM_META_FETCH_FAILED GET https://registry.npmjs.org/dsh-toolkit: ...",
+    "npm error 404 Not Found - GET https://cdn.npmmirror.com/packages/dsh-toolkit/0.1.0",
+  ].join("\n");
+  const a = analyzePluginError(out, "");
+  assert.equal(a.kind, "dep404", "应优先判定为 404");
+  assert.equal(a.missingDep, "dsh-toolkit");
+  assert.ok(!a.lines.some((l) => l.includes("git-hosted plugins build on install")), "应过滤误导行");
+  assert.ok(!a.lines.some((l) => l.includes("add the exact key pnpm printed")), "应过滤提示行");
+  assert.ok(a.lines.some((l) => l.includes("404")), "应保留真实 404 行");
+});
+
+test("analyzePluginError：generic 提取错误行（非 404 / 非网络）", () => {
+  const { analyzePluginError } = require("../out/pluginManager.js");
+  const a = analyzePluginError("", "pnpm error ERR_PNPM_LOCKFILE_INCOMPLETE broken lockfile at pnpm-lock.yaml");
+  assert.equal(a.kind, "generic");
+  assert.ok(a.lines.some((l) => l.includes("ERR_PNPM")), "应保留错误行");
+});

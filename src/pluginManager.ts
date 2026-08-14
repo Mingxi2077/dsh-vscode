@@ -112,6 +112,73 @@ export interface PluginCommandResult {
   message: string;
   /** 安装/卸载后是否为 bundle 激活状态。 */
   active?: boolean;
+  /** 失败原因分类（供 UI 翻译成友好双语消息）。 */
+  kind?: "dep404" | "network" | "generic";
+  /** dep404 时缺失的依赖包名。 */
+  missingDep?: string;
+  /** 提取的关键错误行（已过滤误导行）。 */
+  detail?: string;
+}
+
+export interface PluginErrorAnalysis {
+  kind: "dep404" | "network" | "generic";
+  /** dep404 时缺失的依赖包名。 */
+  missingDep?: string;
+  /** 供展示的关键错误行（已过滤误导行、去重、限长）。 */
+  lines: string[];
+}
+
+/** 从 pnpm/dsh 错误输出中提取缺失依赖的包名（支持官方 registry 与 npmmirror CDN 两种 URL 形式）。 */
+export function extractMissingDep(output: string): string | undefined {
+  // npmmirror CDN: https://cdn.npmmirror.com/packages/%40deepseek-ai/dsh-type-meta/0.0.1-rc.1/...
+  const m1 = output.match(/packages\/((?:%40[^\/]+\/)?[^\/]+)\//);
+  if (m1) return decodeURIComponent(m1[1].replace(/%2f/gi, "/"));
+  // 官方 registry: https://registry.npmjs.org/@deepseek-ai%2fdsh-type-meta 或 /@scope/pkg 或 /pkg
+  const m2 = output.match(/registry\.npmjs\.org\/((?:@[^\/\s]+(?:%2f|\/)[^\/\s@]+)|[^\/\s@]+)/i);
+  if (m2) return decodeURIComponent(m2[1].replace(/%2f/gi, "/"));
+  // 兜底: GET https://.../<pkg> 或 <scope>/<pkg>
+  const m3 = output.match(/GET\s+https?:\/\/[^\s]+\/((?:@[^\/\s]+(?:\/|%2f)[^\/\s@]+)|[^\/\s@]+)(?:@|\/|$)/i);
+  if (m3) return decodeURIComponent(m3[1].replace(/%2f/gi, "/"));
+  return undefined;
+}
+
+/** 从 pnpm/dsh 错误输出中分类失败原因并提取关键错误行。
+ * dep404: 依赖在 npm 上不存在（404）→ 插件自身依赖未发布，无法安装。
+ * network: 网络不可达/超时/代理问题 → 可重试或检查网络。
+ * generic: 其它真实错误。
+ * 同时过滤 DSH 附加的通用误导提示行，避免把"提示"当成"原因"。 */
+export function analyzePluginError(stdout: string, stderr: string): PluginErrorAnalysis {
+  const combined = stdout + "\n" + stderr;
+  const lines = combined.split(/\r?\n/);
+  // 过滤 DSH 的通用误导提示行
+  const meaningful = lines.filter(
+    (l) => !l.includes("git-hosted plugins build on install") && !l.includes("add the exact key pnpm printed")
+  );
+  const cap = (ls: string[], n: number) =>
+    ls
+      .filter((l) => l.trim())
+      .map((l) => (l.length > 200 ? l.slice(0, 200) + "…" : l))
+      .slice(0, n);
+
+  // --- dep404 ---
+  if (/404\s+Not Found|ERR_PNPM_FETCH_404|Not Found - GET/.test(combined)) {
+    const keyLines = meaningful.filter((l) => /404|Not Found|npm error|ERR_PNPM_FETCH_404|GET https?:/.test(l));
+    return {
+      kind: "dep404",
+      missingDep: extractMissingDep(combined),
+      lines: cap(keyLines.length ? keyLines : meaningful, 6),
+    };
+  }
+  // --- network ---
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network unreachable|couldn'?t connect|tunneling socket|ERR_PNPM_FETCH_5\d\d/i.test(combined)) {
+    const keyLines = meaningful.filter((l) =>
+      /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network|proxy|connect|FETCH_5\d\d/i.test(l)
+    );
+    return { kind: "network", lines: cap(keyLines.length ? keyLines : meaningful, 6) };
+  }
+  // --- generic: 优先 error 行，否则前几行真实输出 ---
+  const errLines = meaningful.filter((l) => /npm error|ERR_PNPM|pnpm error|error\s*:|failed/i.test(l));
+  return { kind: "generic", lines: cap(errLines.length ? errLines : meaningful, 8) };
 }
 
 /** 识别插件安装来源类型（npm 包名 / github: 短名 / git URL / tarball URL / 本地路径）。 */
@@ -228,16 +295,35 @@ export function runPluginCommand(
             `could not extract the package name from the error. Try installing again, or check the DSH output panel.`,
         });
       } else {
-        // 非 build 许可错误：过滤 DSH 的通用提示行（避免误导），保留真实错误
-        const realErr = (stderr + "\n" + stdout)
-          .split(/\r?\n/)
-          .filter((l) => !l.includes("git-hosted plugins build on install") && !l.includes("add the exact key pnpm printed"))
-          .join("\n")
-          .trim();
-        resolve({
-          ok: false,
-          message: `${action === "add" ? "install" : "remove"} ${packageName} failed (exit ${codeRef}): ${realErr.slice(0, 300)}`,
-        });
+        // 非 build 许可错误：分类并提取关键错误行（避免 300 字符截断丢失真实原因）
+        const analysis = analyzePluginError(stdout, stderr);
+        const actionWord = action === "add" ? "install" : "remove";
+        const detail = analysis.lines.join("\n");
+        if (analysis.kind === "dep404") {
+          resolve({
+            ok: false,
+            kind: "dep404",
+            missingDep: analysis.missingDep,
+            detail,
+            message:
+              `install ${packageName} failed: ` +
+              (analysis.missingDep
+                ? `dependency "${analysis.missingDep}" is not published on npm (404), so this plugin cannot be installed. Report it to the plugin author or try another plugin.`
+                : `a dependency was not found on npm (404), so this plugin cannot be installed. Report it to the plugin author or try another plugin.`),
+          });
+        } else if (analysis.kind === "network") {
+          resolve({
+            ok: false,
+            kind: "network",
+            detail,
+            message: `${actionWord} ${packageName} failed: network error while contacting the registry. Check your connection / proxy and retry.`,
+          });
+        } else {
+          resolve({
+            ok: false,
+            message: `${actionWord} ${packageName} failed (exit ${codeRef}): ${detail}`,
+          });
+        }
       }
     };
     let codeRef: number | null = null;

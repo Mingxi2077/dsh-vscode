@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.9.6 (2026-08-15)
+
+### Fixed
+
+- **Clear bilingual error for npm 404**: installing a plugin whose dependency is not published on npm (e.g. `dsh-toolkit` → `@deepseek-ai/dsh-type-meta`) now shows a readable message in the current UI language — "dependency is not published on npm (404), report it to the plugin author or try another plugin" — with the real 404 line, instead of raw truncated output.
+- **Error classification & extraction**: failures are classified as dependency-404 / network / generic; the relevant error lines are extracted (misleading DSH hint lines filtered out) instead of a blind 300-character truncation that could cut off the actual cause.
+
+## 0.9.5 (2026-08-15)
+
+### Fixed
+
+- **Build-allow auto-handling false positive**: DSH always appends a generic "git-hosted plugins build on install…" hint to stderr on *any* failure, which was matched as a build-script error. Now only the real pnpm error (`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` / `needs to execute build scripts but is not in the "onlyBuiltDependencies"`) triggers the auto-allow retry, and the misleading hint lines are filtered from error output.
+- Wait for both output streams to end before resolving a plugin command, so error parsing never sees a truncated buffer.
+
+## 0.9.4 (2026-08-15)
+
+### Changed
+
+- **i18n coverage**: plugin descriptions/categories, "check environment" provider section, preset status summary — all bilingual (English / 中文, follows VS Code UI language).
+- **Plugin center**: "Install from source…" and "Refresh" moved to the top of the list so they are always visible; plugin command results (install/uninstall/errors) localized into the current UI language.
+- **Sidebar**: added "Plugin Center" and "Mode Presets" entries.
+
+## 0.9.3 (2026-08-15)
+
+### Added
+
+- **Install from any source**: the plugin center can install not only npm packages but also GitHub repos (`github:owner/repo`), git URLs / tarball URLs, and local paths, into the headless profile.
+- Git/URL-hosted plugins that need a build-script permission are auto-added to `onlyBuiltDependencies` and retried.
+
 ## 0.9.2 (2026-08-15)
 
 ### Fixed
