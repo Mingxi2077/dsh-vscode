@@ -1,7 +1,7 @@
 {
   "name": "dsh-harness-vscode",
   "displayName": "DSH Agent for VS Code",
-  "description": "Use DeepSeek Harness (DSH) in VS Code like Claude Code: no service dependency, drives dsh --profile headless directly, streams thinking chain and tool calls in real time, with long-term memory, /compact /model /provider, apply-code-to-file, and token/cache usage display.",
+  "description": "%description%",
   "version": "0.9.0",
   "publisher": "mingxi2077",
   "license": "MIT",

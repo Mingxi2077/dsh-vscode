@@ -1,4 +1,5 @@
 {
+  "description": "Watch a plugin-driven AI agent think, act and build in your project — live. DSH (DeepSeek Harness) streams its reasoning, tool calls, goals and todo lists as it reads, edits and runs your code; one-click OpenAI/Anthropic/Google/OpenRouter providers; long-term project memory; apply code straight to files. No server, no setup beyond one API key.",
   "view.status.name": "Status",
   "command.openChat": "DSH: Open Chat",
   "command.pluginCenter": "DSH: Plugin Center",
