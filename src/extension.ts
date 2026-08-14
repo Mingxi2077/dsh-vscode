@@ -8,6 +8,7 @@ import { resolveCli, ResolvedCli, runCliVersion, buildSpawnArgs, runDsh } from "
 import { SecretStore } from "./secrets";
 import { writeModelPatch } from "./modelSelection";
 import { stableHash } from "./sessionStore";
+import { registerChatParticipant } from "./chatParticipant";
 
 /** 子进程环境变量提供者：进程环境 + 系统密钥链中的 API Key + 用户配置覆盖。 */
 function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEnv> {
@@ -198,6 +199,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const cliProvider = createCliProvider();
   const envProvider = createEnvProvider(secrets);
   let panel: ChatPanel | undefined;
+
+  // @dsh-agent 聊天参与者（内置 Chat 中 @ 唤起）
+  context.subscriptions.push(registerChatParticipant(context, cliProvider, envProvider, log));
 
   context.subscriptions.push(
     vscode.commands.registerCommand("dsh-harness-vscode.openChat", async () => {
