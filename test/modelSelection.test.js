@@ -140,6 +140,32 @@ test("buildTaskText 包含会话配置与技能段", () => {
   assert.ok(text.includes("继续"));
 });
 
+test("buildTaskText：zh=false 时输出英文任务模板（i18n 防回归）", () => {
+  const session = {
+    id: "s1",
+    title: "t",
+    createdAt: 1,
+    updatedAt: 1,
+    messages: [
+      { id: "m1", role: "user", content: "hello", ts: 1 },
+    ],
+  };
+  const text = buildTaskText(
+    "C:\\proj",
+    session,
+    [],
+    { excerpt: () => "" },
+    20,
+    8000,
+    [],
+    false // zh=false = 英文界面
+  );
+  assert.ok(text.includes("assisting the user"), "应输出英文引导语");
+  assert.ok(text.includes("Project root"), "应输出英文项目根目录");
+  assert.ok(text.includes("Latest user message"), "应输出英文最新消息标题");
+  assert.ok(!text.includes("项目根目录"), "不应含中文模板");
+});
+
 test("CATALOG_PROVIDERS：内置清单含常见 provider 且字段完整", () => {
   assert.ok(CATALOG_PROVIDERS.length >= 10, "应内置至少 10 个 provider");
   for (const p of CATALOG_PROVIDERS) {

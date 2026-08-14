@@ -773,7 +773,7 @@ export class ChatPanel {
       historyN,
       maxChars,
       extraSections,
-      !isZh()
+      isZh()
     );
   }
 
