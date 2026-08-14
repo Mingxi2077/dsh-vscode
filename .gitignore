@@ -9,3 +9,5 @@ dist/
 package-out.txt
 test-*.txt
 tsc-out.txt
+
+check-i18n.txt
