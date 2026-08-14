@@ -11,6 +11,8 @@ import { settingsPath } from "./settingsEditor";
 import { stableHash } from "./sessionStore";
 import { registerChatParticipant } from "./chatParticipant";
 import { registerSidebarView } from "./sidebar";
+import { openPluginCenter, pluginStatusSummary } from "./pluginCenter";
+import { openPresetCenter, presetStatusSummary } from "./presetCenter";
 
 /** 检查 llm-pi-ai.providers 配置的可服务性（返回多行说明）。 */
 function checkProviderConfig(): string[] {
@@ -223,6 +225,16 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(registerSidebarView(context));
 
   context.subscriptions.push(
+    // 插件中心：浏览已装插件（只读视图）
+    vscode.commands.registerCommand("dsh-harness-vscode.pluginCenter", () => {
+      void openPluginCenter(cliProvider);
+    }),
+
+    // 模式预设：启用/停用 DSH 原生行为预设
+    vscode.commands.registerCommand("dsh-harness-vscode.presetCenter", () => {
+      void openPresetCenter();
+    }),
+
     vscode.commands.registerCommand("dsh-harness-vscode.openChat", async () => {
       const folder = await pickFolder();
       if (!folder) return;
@@ -293,6 +305,12 @@ export function activate(context: vscode.ExtensionContext): void {
         output.appendLine(`  settings.yaml: ${settingsPath()}`);
         const providerCheck = checkProviderConfig();
         for (const line of providerCheck) output.appendLine(`  ${line}`);
+        output.appendLine("");
+        output.appendLine("headless 插件：");
+        for (const line of pluginStatusSummary()) output.appendLine(`  ${line}`);
+        output.appendLine("");
+        output.appendLine("模式预设：");
+        for (const line of presetStatusSummary()) output.appendLine(`  ${line}`);
         output.appendLine("");
         output.appendLine("检查通过。打开项目后执行「DSH: 打开对话」即可开始。");
         output.show(true);
