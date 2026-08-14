@@ -1,6 +1,6 @@
-# dsh-vscode 一键构建脚本（Windows / PowerShell）
+# dsh-harness-vscode 一键构建脚本（Windows / PowerShell）
 # 用法:  .\build.ps1 [-SkipTest]
-# 产出:  dist\dsh-vscode-<版本>.vsix
+# 产出:  dist\dsh-harness-vscode-<版本>.vsix
 param(
   [switch]$SkipTest
 )
@@ -27,7 +27,7 @@ npx vsce package --no-dependencies --allow-missing-repository
 
 Write-Host "==> 移动到 dist/"
 New-Item -ItemType Directory -Force -Path "dist" | Out-Null
-Get-ChildItem -Path . -Filter "dsh-vscode-*.vsix" -File | ForEach-Object {
+Get-ChildItem -Path . -Filter "dsh-harness-vscode-*.vsix" -File | ForEach-Object {
   Move-Item -Force $_.FullName (Join-Path (Join-Path $root "dist") $_.Name)
   Write-Host "    已生成: dist\$($_.Name)"
 }

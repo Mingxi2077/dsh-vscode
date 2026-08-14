@@ -8,9 +8,9 @@
 
 ## 快速开始（普通用户，无需源码、无需编译）
 
-1. **获取插件**：下载 `dsh-vscode-<版本>.vsix` 文件（一个文件，随发布提供）。
+1. **获取插件**：下载 `dsh-harness-vscode-<版本>.vsix` 文件（一个文件，随发布提供）。
 2. **安装**：VS Code 扩展面板（`Ctrl+Shift+X`）→ 右上角 `⋯` → **从 VSIX 安装…** → 选择下载的 `.vsix`。
-   - 或用命令行：`code --install-extension dsh-vscode-0.1.0.vsix`
+   - 或用命令行：`code --install-extension dsh-harness-vscode-0.1.0.vsix`
 3. **配置 API Key**：`Ctrl+Shift+P` → **DSH: 配置 API Key** → 输入你的 DeepSeek API Key（`sk-...`，在 [platform.deepseek.com](https://platform.deepseek.com) 申请）。
    - Key 保存在**系统密钥链**（VS Code SecretStorage），不写入任何配置文件。
 4. **打开一个项目文件夹**（工作区）。
@@ -25,7 +25,7 @@
 - 一个 DeepSeek API Key（见上方第 3 步）。
 - VS Code ≥ 1.85，Node ≥ 22（扩展会自动以 `--expose-internals` 启动 dsh 并优先使用 PATH 上的 node；推荐 Node ≥ 24）。
 
-如果 `dsh` 不在 PATH 中，可在扩展设置 `dsh-vscode.cliPath` 中手动指定路径。
+如果 `dsh` 不在 PATH 中，可在扩展设置 `dsh-harness-vscode.cliPath` 中手动指定路径。
 
 ## 使用
 
@@ -72,18 +72,18 @@
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `dsh-vscode.cliPath` | `""` | dsh 可执行文件或 `lib/bin.js` 的绝对路径；留空自动从 PATH 解析（Windows 下会直接定位 JS 入口以规避 cmd 转义问题） |
-| `dsh-vscode.extraArgs` | `[]` | 附加到启动命令的参数（如 `--patch <path>`） |
-| `dsh-vscode.timeoutSeconds` | `600` | 单次任务超时秒数，超时自动取消 |
-| `dsh-vscode.environment` | `{}` | 传给 dsh 子进程的额外环境变量（如 API Key） |
-| `dsh-vscode.historyMessages` | `20` | 拼进任务文本的最近消息条数（用于延续多轮对话） |
-| `dsh-vscode.maxMessageChars` | `8000` | 单条历史/上下文内容拼入任务文本的最大字符数 |
-| `dsh-vscode.streamProgress` | `true` | 实时展示思维链与工具调用过程（通过 tail DSH 会话事件日志）；关闭后仅显示最终答复 |
+| `dsh-harness-vscode.cliPath` | `""` | dsh 可执行文件或 `lib/bin.js` 的绝对路径；留空自动从 PATH 解析（Windows 下会直接定位 JS 入口以规避 cmd 转义问题） |
+| `dsh-harness-vscode.extraArgs` | `[]` | 附加到启动命令的参数（如 `--patch <path>`） |
+| `dsh-harness-vscode.timeoutSeconds` | `600` | 单次任务超时秒数，超时自动取消 |
+| `dsh-harness-vscode.environment` | `{}` | 传给 dsh 子进程的额外环境变量（如 API Key） |
+| `dsh-harness-vscode.historyMessages` | `20` | 拼进任务文本的最近消息条数（用于延续多轮对话） |
+| `dsh-harness-vscode.maxMessageChars` | `8000` | 单条历史/上下文内容拼入任务文本的最大字符数 |
+| `dsh-harness-vscode.streamProgress` | `true` | 实时展示思维链与工具调用过程（通过 tail DSH 会话事件日志）；关闭后仅显示最终答复 |
 
 ## 常见问题
 
 **「未找到 dsh 命令」/ 检查环境失败**
-→ 说明 dsh 未安装或不在 PATH。执行 `npm i -g @deepseek-ai/dsh`，然后**新开一个终端**验证 `dsh --version`；或在设置里用 `dsh-vscode.cliPath` 指定完整路径。
+→ 说明 dsh 未安装或不在 PATH。执行 `npm i -g @deepseek-ai/dsh`，然后**新开一个终端**验证 `dsh --version`；或在设置里用 `dsh-harness-vscode.cliPath` 指定完整路径。
 
 **检查环境显示「API Key 未配置」**
 → 执行 **DSH: 配置 API Key** 输入你的 DeepSeek API Key（sk-...）；或在系统环境变量里设置 `DEEPSEEK_API_KEY`。DSH 内置默认提供商 `deepseek-official`，有 Key 即可用，无需其它配置。
@@ -92,7 +92,7 @@
 → 同上：未检测到 API Key。面板会直接给出指引。
 
 **任务提示超时**
-→ 调大 `dsh-vscode.timeoutSeconds`（默认 600 秒）。
+→ 调大 `dsh-harness-vscode.timeoutSeconds`（默认 600 秒）。
 
 **任务文本里的特殊字符被破坏（Windows）**
 → 本扩展默认会自动定位 `dsh` 的 JS 入口并用 node 直接启动，规避 cmd 转义。如果仍异常，请反馈。
@@ -100,8 +100,8 @@
 ## 开发者：从源码构建
 
 ```bash
-git clone <本仓库> dsh-vscode
-cd dsh-vscode
+git clone <本仓库> dsh-harness-vscode
+cd dsh-harness-vscode
 npm install
 npm run compile      # 或 npm run watch 增量编译
 npm test             # 运行单元测试
@@ -117,7 +117,7 @@ npx vsce package     # 打包出 .vsix
 
 - **沙箱**：默认 `workspace-write`，agent 只能读写当前工作区内的文件，shell 在受限模式（Windows 下 PowerShell ConstrainedLanguage）运行。已实测：尝试写工作区外的文件会被拒绝。
 - **审批**：默认 `ask`；但 headless 无交互应答器，因此**需要审批的越权操作一律失败关闭（自动拒绝）**——agent 无法自我放行危险操作。
-- **可配置**：设置 `dsh-vscode.permissionMode` 可切 `read-only` / `workspace-write` / `danger-full-access`。⚠ `danger-full-access` 会完全解除限制且审批自动放行，仅在完全信任任务时使用。
+- **可配置**：设置 `dsh-harness-vscode.permissionMode` 可切 `read-only` / `workspace-write` / `danger-full-access`。⚠ `danger-full-access` 会完全解除限制且审批自动放行，仅在完全信任任务时使用。
 
 使用建议：在委托 agent 改动项目前，先 `git status` 确认工作区干净（或已提交），这样任何误操作都可通过版本控制回退。
 

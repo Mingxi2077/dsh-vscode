@@ -184,7 +184,7 @@ export function writeModelPatch(
 
   // 1. settings 覆盖文件（settings-file.path 指向它）
   const settingsFile = path.join(dir, `${folderHash}.settings.yaml`);
-  const lines = ["# dsh-vscode 生成的设置覆盖（模型选择）", "agent-default-model:", `  provider: ${selection.provider}`, `  model: ${selection.model}`];
+  const lines = ["# dsh-harness-vscode 生成的设置覆盖（模型选择）", "agent-default-model:", `  provider: ${selection.provider}`, `  model: ${selection.model}`];
   if (selection.reasoningEffort) {
     lines.push(`  reasoningEffort: ${selection.reasoningEffort}`);
   }
@@ -199,7 +199,7 @@ export function writeModelPatch(
   fs.writeFileSync(
     patchFile,
     [
-      "# dsh-vscode 生成的模型选择补丁（由 /provider /model /effort 管理）",
+      "# dsh-harness-vscode 生成的模型选择补丁（由 /provider /model /effort 管理）",
       "- id: settings",
       "  config:",
       `    path: ${settingsFile.replace(/\\/g, "/")}`,

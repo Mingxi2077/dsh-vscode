@@ -99,7 +99,7 @@ export class ChatPanel {
     this.session = this.createFreshSession();
 
     this.panel = vscode.window.createWebviewPanel(
-      "dsh-chat",
+      "dsh-harness-vscode-chat",
       "DSH",
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       {
@@ -398,7 +398,7 @@ export class ChatPanel {
       return this.systemMessage(`无法解析 dsh 命令：${message}`);
     }
     try {
-      const cfg = vscode.workspace.getConfiguration("dsh-vscode");
+      const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
       const extraArgs = cfg.get<string[]>("extraArgs", []);
       const timeoutSec = cfg.get<number>("timeoutSeconds", 600);
       const streamProgress = cfg.get<boolean>("streamProgress", true);
@@ -449,7 +449,7 @@ export class ChatPanel {
       }
       if (result.timedOut) {
         return this.systemMessage(
-          `任务超时（超过 ${timeoutSec} 秒）已被取消。可在设置 dsh-vscode.timeoutSeconds 中调整。`
+          `任务超时（超过 ${timeoutSec} 秒）已被取消。可在设置 dsh-harness-vscode.timeoutSeconds 中调整。`
         );
       }
       if (result.code !== 0) {
@@ -545,7 +545,7 @@ export class ChatPanel {
     const timer = setTimeout(() => abort.abort(), 120000);
     try {
       const cli = await this.cliProvider();
-      const cfg = vscode.workspace.getConfiguration("dsh-vscode");
+      const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
       const extraArgs = cfg.get<string[]>("extraArgs", []);
       extraArgs.push("--patch", path.join(this.extensionPath, "patch", "stream.patch.yml"));
       const modelPatch = this.currentModelPatch();
@@ -600,7 +600,7 @@ export class ChatPanel {
     const model = sel?.model ?? "（DSH 默认）";
     const effort = this.effectiveEffort() ?? "未设置";
     const skills = this.enabledSkills.length ? this.enabledSkills.join("、") : "无";
-    const mode = vscode.workspace.getConfiguration("dsh-vscode").get<string>("permissionMode", "workspace-write");
+    const mode = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
     const usage = this.lastUsage
       ? `\n用量：输入 ${fmtNum(this.lastUsage.input)} · 输出 ${fmtNum(this.lastUsage.output)} · 缓存读 ${fmtNum(this.lastUsage.cacheRead)} · 推理 ${fmtNum(this.lastUsage.reasoning)} token` +
         (this.lastUsage.cacheRead + this.lastUsage.input > 0
@@ -645,7 +645,7 @@ export class ChatPanel {
   }
 
   private buildTaskText(): string {
-    const cfg = vscode.workspace.getConfiguration("dsh-vscode");
+    const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
     const historyN = cfg.get<number>("historyMessages", 20);
     const maxChars = cfg.get<number>("maxMessageChars", 8000);
 

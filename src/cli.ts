@@ -84,9 +84,9 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
       throw new Error(`配置的 dsh.cliPath 不存在: ${p}`);
     }
     if (p.toLowerCase().endsWith(".js")) {
-      return { kind: "entry", node: await resolveNodeBinary(), entry: p, source: "配置(dsh-vscode.cliPath)" };
+      return { kind: "entry", node: await resolveNodeBinary(), entry: p, source: "配置(dsh-harness-vscode.cliPath)" };
     }
-    return { kind: "command", command: p, source: "配置(dsh-vscode.cliPath)" };
+    return { kind: "command", command: p, source: "配置(dsh-harness-vscode.cliPath)" };
   }
 
   const isWin = process.platform === "win32";
@@ -119,7 +119,7 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
   }
 
   throw new Error(
-    "未找到 dsh 命令。请确认已全局安装 @deepseek-ai/dsh（npm i -g @deepseek-ai/dsh），或在设置中配置 dsh-vscode.cliPath。"
+    "未找到 dsh 命令。请确认已全局安装 @deepseek-ai/dsh（npm i -g @deepseek-ai/dsh），或在设置中配置 dsh-harness-vscode.cliPath。"
   );
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# dsh-vscode 一键构建脚本（macOS / Linux）
+# dsh-harness-vscode 一键构建脚本（macOS / Linux）
 # 用法:  ./build.sh [-s]     (-s 跳过测试)
-# 产出:  dist/dsh-vscode-<版本>.vsix
+# 产出:  dist/dsh-harness-vscode-<版本>.vsix
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -24,7 +24,7 @@ npx vsce package --no-dependencies --allow-missing-repository
 
 echo "==> 移动到 dist/"
 mkdir -p dist
-mv -f dsh-vscode-*.vsix dist/
+mv -f dsh-harness-vscode-*.vsix dist/
 echo "    已生成: dist/$(ls dist | grep '\.vsix$' | tail -1)"
 
 echo "==> 构建完成"

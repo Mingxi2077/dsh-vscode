@@ -12,7 +12,7 @@ import { stableHash } from "./sessionStore";
 /** 子进程环境变量提供者：进程环境 + 系统密钥链中的 API Key + 用户配置覆盖。 */
 function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEnv> {
   return async () => {
-    const cfg = vscode.workspace.getConfiguration("dsh-vscode");
+    const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
     const extraEnv = cfg.get<Record<string, string>>("environment", {});
     const permissionMode = cfg.get<string>("permissionMode", "workspace-write");
     const env: NodeJS.ProcessEnv = { ...process.env };
@@ -55,7 +55,7 @@ class StatusBarController implements StatusBar {
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    this.item.command = "dsh-vscode.openChat";
+    this.item.command = "dsh-harness-vscode.openChat";
     this.item.show();
     this.update();
   }
@@ -90,7 +90,7 @@ function createCliProvider(): () => Promise<ResolvedCli> {
 
   const provider = async (): Promise<ResolvedCli> => {
     if (!cache) {
-      const cfg = vscode.workspace.getConfiguration("dsh-vscode");
+      const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
       cache = resolveCli(cfg.get<string>("cliPath", "")).catch((err) => {
         cache = undefined;
         throw err;
@@ -100,7 +100,7 @@ function createCliProvider(): () => Promise<ResolvedCli> {
   };
 
   vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration("dsh-vscode.cliPath")) {
+    if (e.affectsConfiguration("dsh-harness-vscode.cliPath")) {
       cache = undefined;
     }
   });
@@ -200,7 +200,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let panel: ChatPanel | undefined;
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("dsh-vscode.openChat", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.openChat", async () => {
       const folder = await pickFolder();
       if (!folder) return;
       panel = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
@@ -208,7 +208,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     // 配置 API Key：普通用户第一步，保存在系统密钥链（VS Code SecretStorage）
-    vscode.commands.registerCommand("dsh-vscode.configureApiKey", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.configureApiKey", async () => {
       const hasSecret = !!(await secrets.get("DEEPSEEK_API_KEY"));
       const pick = await vscode.window.showQuickPick(
         [
@@ -248,7 +248,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     // 环境自检：普通用户装完第一步就运行它
-    vscode.commands.registerCommand("dsh-vscode.checkEnvironment", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.checkEnvironment", async () => {
       output.clear();
       output.appendLine("DSH 环境检查");
       output.appendLine("==============");
@@ -260,7 +260,7 @@ export function activate(context: vscode.ExtensionContext): void {
         output.appendLine(`版本: ${version || "未知"}`);
         const key = await apiKeyStatus(secrets);
         output.appendLine(`API Key: ${key}`);
-        const permMode = vscode.workspace.getConfiguration("dsh-vscode").get<string>("permissionMode", "workspace-write");
+        const permMode = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
         output.appendLine(`沙箱模式: ${permMode}（无交互 headless 下审批失败关闭，无法自我越权）`);
         if (permMode === "danger-full-access") {
           void vscode.window.showWarningMessage("⚠ 沙箱模式为 danger-full-access：dsh 将不受限操作且审批自动放行，请确保任务可信。");
@@ -277,7 +277,7 @@ export function activate(context: vscode.ExtensionContext): void {
         output.appendLine("请确认：");
         output.appendLine("  1. 已全局安装 dsh：npm i -g @deepseek-ai/dsh");
         output.appendLine("  2. dsh 在 PATH 中（新开一个终端执行 dsh --version 验证）");
-        output.appendLine("  3. 或在本扩展设置 dsh-vscode.cliPath 中指定 dsh 路径");
+        output.appendLine("  3. 或在本扩展设置 dsh-harness-vscode.cliPath 中指定 dsh 路径");
         output.show(true);
         status.setReady(false, "DSH: 环境异常，运行「DSH: 检查环境」查看详情");
         void vscode.window.showErrorMessage(`DSH 环境检查失败：${message}`);
@@ -285,7 +285,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     // 兼容性自检：跑一次 tiny 任务，验证流式补丁（明文会话日志）与模型补丁机制
-    vscode.commands.registerCommand("dsh-vscode.selfTest", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.selfTest", async () => {
       const folder = await pickFolder();
       if (!folder) return;
       output.clear();
@@ -342,21 +342,21 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.newSession", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.newSession", async () => {
       const current = panel ?? ChatPanel.current();
       if (!current) {
-        await vscode.commands.executeCommand("dsh-vscode.openChat");
+        await vscode.commands.executeCommand("dsh-harness-vscode.openChat");
         return;
       }
       current.newSession();
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.cancelRun", () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.cancelRun", () => {
       const current = panel ?? ChatPanel.current();
       current?.cancel();
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.addSelection", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.addSelection", async () => {
       let current = panel ?? ChatPanel.current();
       if (!current) {
         const folder = await pickFolder();
@@ -367,7 +367,7 @@ export function activate(context: vscode.ExtensionContext): void {
       current.attachSelection();
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.addOpenFile", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.addOpenFile", async () => {
       let current = panel ?? ChatPanel.current();
       if (!current) {
         const folder = await pickFolder();
@@ -378,7 +378,7 @@ export function activate(context: vscode.ExtensionContext): void {
       current.attachOpenFile();
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.askAboutFile", async (uri?: vscode.Uri) => {
+    vscode.commands.registerCommand("dsh-harness-vscode.askAboutFile", async (uri?: vscode.Uri) => {
       const folder = await pickFolder();
       if (!folder) return;
       const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
@@ -405,13 +405,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // ---- 快捷提示命令 ----
 
-    vscode.commands.registerCommand("dsh-vscode.quickExplainFile", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.quickExplainFile", async () => {
       const chat = await openChatWithDraft(context, cliProvider, envProvider, secrets, status, log, "请解释当前文件的结构、职责和关键逻辑。\n");
       const editor = vscode.window.activeTextEditor;
       if (chat && editor) chat.attachOpenFile();
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.quickReviewChanges", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.quickReviewChanges", async () => {
       const folder = await pickFolder();
       if (!folder) return;
       const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
@@ -427,7 +427,7 @@ export function activate(context: vscode.ExtensionContext): void {
       );
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.quickWriteTests", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.quickWriteTests", async () => {
       const chat = await openChatWithDraft(
         context,
         cliProvider,
@@ -443,7 +443,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // ---- 终端与记忆 ----
 
-    vscode.commands.registerCommand("dsh-vscode.openTerminal", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.openTerminal", async () => {
       const folder = await pickFolder();
       if (!folder) return;
       const terminal = vscode.window.createTerminal({
@@ -455,7 +455,7 @@ export function activate(context: vscode.ExtensionContext): void {
       terminal.sendText("dsh web --port 3088");
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.editMemory", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.editMemory", async () => {
       const current = panel ?? ChatPanel.current();
       if (current) {
         await current.editMemory();
@@ -468,7 +468,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await chat.editMemory();
     }),
 
-    vscode.commands.registerCommand("dsh-vscode.showMemory", async () => {
+    vscode.commands.registerCommand("dsh-harness-vscode.showMemory", async () => {
       const current = panel ?? ChatPanel.current();
       if (current) {
         current.showMemory();
