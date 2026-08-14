@@ -110,7 +110,7 @@ test("disablePreset：移除对应条目且保留其他", () => {
   }
 });
 
-test("disablePreset：全部停用后无残留条目", () => {
+test("disablePreset：全部停用后无残留条目且保留空数组（DSH 可解析）", () => {
   const { root, file } = tmpPatch(undefined);
   try {
     enablePreset("auto-compact", file);
@@ -118,7 +118,18 @@ test("disablePreset：全部停用后无残留条目", () => {
     const raw = fs.readFileSync(file, "utf8");
     assert.ok(!raw.includes("dsh-vscode-preset:"), "不应残留预设标记");
     assert.ok(!raw.includes("- id:"), "不应残留插件条目");
+    assert.ok(raw.includes("[]"), "必须保留空数组 []（DSH 要求顶层是 YAML 数组，纯注释会导致解析失败）");
     assert.equal(listEnabledPresets(file).length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readPatch：损坏的纯注释文件被归一化为带空数组", () => {
+  const { root, file } = tmpPatch("# 只有注释，没有数组\n");
+  try {
+    const raw = readPatch(file);
+    assert.ok(raw.includes("[]"), "纯注释文件读后应补 []");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

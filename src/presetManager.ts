@@ -54,11 +54,19 @@ export function profilePatchPath(): string {
   return path.join(home, "profiles", "headless", "cordis.patch.yml");
 }
 
-/** 读取 patch 原文（不存在返回默认模板）。 */
+/** 读取 patch 原文（不存在返回默认模板；已存在但无数组内容时补 []，保证 DSH 可解析）。 */
 export function readPatch(file = profilePatchPath()): string {
   try {
     const raw = fs.readFileSync(file, "utf8");
-    if (raw.trim()) return raw;
+    if (raw.trim()) {
+      // DSH 要求顶层是 YAML 数组：若内容里没有任何条目，补上空数组模板
+      const hasEntries =
+        raw.split(/\r?\n/).some((l) => /^\s*-\s*id:/.test(l)) || /\[[^\]]*-\s*id:/.test(raw);
+      if (!hasEntries && !/\[\s*\]/.test(raw)) {
+        return raw.trimEnd() + "\n[]\n";
+      }
+      return raw;
+    }
   } catch {
     // 不存在则用默认模板
   }
@@ -210,11 +218,12 @@ function removePresetFromPatch(raw: string, id: PresetId): string {
   }
   const kept = [...lines.slice(0, markerIdx), ...lines.slice(end)];
   const joined = kept.join("\n");
-  // 数组内已无任何条目（可能残留 [\n] 或注释）时，把数组部分归一化为 []
-  const arrMatch = joined.match(/\[\s*\]/s);
-  const hasEntries = /\[[^\]]*-\s*id:/.test(joined) || /^-\s*id:/.test(joined.trim());
-  if (arrMatch && !hasEntries) {
-    return joined.replace(/\[\s*\]/s, "[]");
+  // DSH 要求 patch 顶层必须是 YAML 数组。若移除后已无任何 `- id:` 条目，
+  // 统一归一化为空数组模板（注释 + `[]`），绝不能留下纯注释（会导致 DSH 解析失败）。
+  // 注意：条目可能是块式（行首 `- id:`）或 flow 集合内（`[...]`），两种都要识别。
+  const hasEntries = joined.split("\n").some((l) => /^\s*-\s*id:/.test(l)) || /\[[^\]]*-\s*id:/.test(joined);
+  if (!hasEntries) {
+    return "# dsh-vscode 生成的 headless 预设层（由「DSH: 模式预设」管理）\n# 按 id 覆盖 bundle 层配置，last write wins。\n[]\n";
   }
   return joined;
 }
