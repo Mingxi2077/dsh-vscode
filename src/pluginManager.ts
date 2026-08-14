@@ -176,9 +176,10 @@ export function analyzePluginError(stdout: string, stderr: string): PluginErrorA
     );
     return { kind: "network", lines: cap(keyLines.length ? keyLines : meaningful, 6) };
   }
-  // --- generic: 优先 error 行，否则前几行真实输出 ---
+  // --- generic: 优先 error 行，否则跳过 Progress 进度行的真实输出 ---
   const errLines = meaningful.filter((l) => /npm error|ERR_PNPM|pnpm error|error\s*:|failed/i.test(l));
-  return { kind: "generic", lines: cap(errLines.length ? errLines : meaningful, 8) };
+  const fallback = meaningful.filter((l) => !/^Progress:/i.test(l.trim()));
+  return { kind: "generic", lines: cap(errLines.length ? errLines : fallback, 8) };
 }
 
 /** 识别插件安装来源类型（npm 包名 / github: 短名 / git URL / tarball URL / 本地路径）。 */
@@ -261,12 +262,14 @@ export function runPluginCommand(
       child.kill();
       resolve({ ok: false, message: `plugin command timed out (${packageName})` });
     }, 180000);
-    // 等两个输出流都 end 再处理，避免 close 时 stdout 缓冲未刷完导致解析不到错误信息
+    // 等输出流 end + 进程 close 全部就绪再处理：0.9.5 只等 end 导致 close（写入
+    // codeRef）晚于 finish() 触发，codeRef 恒为 null → 成功安装被误判为失败
     let outDone = false;
     let errDone = false;
+    let closeDone = false;
     let settled = false;
     const finish = () => {
-      if (!outDone || !errDone || settled) return;
+      if (!outDone || !errDone || !closeDone || settled) return;
       settled = true;
       clearTimeout(timer);
       if (codeRef === 0) {
@@ -347,6 +350,7 @@ export function runPluginCommand(
     });
     child.on("close", (code) => {
       codeRef = code;
+      closeDone = true;
       finish();
     });
   });

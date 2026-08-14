@@ -7,6 +7,7 @@
 - **Clear bilingual error for npm 404**: installing a plugin whose dependency is not published on npm (e.g. `dsh-toolkit` → `@deepseek-ai/dsh-type-meta`) now shows a readable message in the current UI language — "dependency is not published on npm (404), report it to the plugin author or try another plugin" — with the real 404 line, instead of raw truncated output.
 - **Error classification & extraction**: failures are classified as dependency-404 / network / generic; the relevant error lines are extracted (misleading DSH hint lines filtered out) instead of a blind 300-character truncation that could cut off the actual cause.
 - **Local relative paths resolved against the workspace**: pnpm runs inside the profile directory, so a relative local path (`./my-plugin`) used to resolve against `~/.dsh/profiles/headless/` and install to the wrong location. It is now resolved against the current workspace folder; without an open workspace the extension asks for an absolute path.
+- **Critical: every successful install was reported as a failure ("exit null")**: the plugin command finished as soon as both output streams ended, but the exit code is only assigned by the `close` event, which fires *after* the streams end — so the code was always `null` and a successful install (pnpm prints only warnings) was judged a failure. The finish gate now waits for `close`; regression tests cover the success path and the dep-404 path.
 
 ## 0.9.5 (2026-08-15)
 

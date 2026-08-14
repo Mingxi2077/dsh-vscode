@@ -197,3 +197,48 @@ test("analyzePluginError：generic 提取错误行（非 404 / 非网络）", ()
   assert.equal(a.kind, "generic");
   assert.ok(a.lines.some((l) => l.includes("ERR_PNPM")), "应保留错误行");
 });
+
+test("analyzePluginError：generic 不把 Progress 进度行当错误", () => {
+  const { analyzePluginError } = require("../out/pluginManager.js");
+  const a = analyzePluginError("", "Progress: resolved 1, reused 0, downloaded 0, added 0\npnpm error ERR_PNPM_FETCH_404 x");
+  assert.equal(a.kind, "dep404");
+  assert.ok(!a.lines.some((l) => l.startsWith("Progress:")), "应跳过进度行");
+});
+
+test("runPluginCommand：双流输出后正常退出应判定成功（close 时序回归）", async () => {
+  const { runPluginCommand } = require("../out/pluginManager.js");
+  const dir = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-plugin-"));
+  try {
+    const script = path.join(dir, "ok.js");
+    fs.writeFileSync(
+      script,
+      'process.stdout.write("dsh: installed test-pkg\\n");\nprocess.stderr.write("WARN peer stuff\\n");\n',
+      "utf8"
+    );
+    const cli = { kind: "entry", node: process.execPath, entry: script, source: "test" };
+    const res = await runPluginCommand(cli, "add", "test-pkg");
+    assert.equal(res.ok, true, `应判定成功，实际: ${res.message}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("runPluginCommand：非零退出 + 404 输出 → dep404 分类", async () => {
+  const { runPluginCommand } = require("../out/pluginManager.js");
+  const dir = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-plugin-"));
+  try {
+    const script = path.join(dir, "fail404.js");
+    fs.writeFileSync(
+      script,
+      'process.stderr.write("npm error 404 Not Found - GET https://cdn.npmmirror.com/packages/dep/1.0.0\\n");\nprocess.exit(1);\n',
+      "utf8"
+    );
+    const cli = { kind: "entry", node: process.execPath, entry: script, source: "test" };
+    const res = await runPluginCommand(cli, "add", "test-pkg");
+    assert.equal(res.ok, false);
+    assert.equal(res.kind, "dep404");
+    assert.equal(res.missingDep, "dep");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
