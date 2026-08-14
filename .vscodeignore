@@ -11,3 +11,4 @@ build.ps1
 build.sh
 dist/**
 *.vsix
+*.txt
