@@ -10,7 +10,7 @@
 
 1. **获取插件**：下载 `dsh-harness-vscode-<版本>.vsix` 文件（一个文件，随发布提供）。
 2. **安装**：VS Code 扩展面板（`Ctrl+Shift+X`）→ 右上角 `⋯` → **从 VSIX 安装…** → 选择下载的 `.vsix`。
-   - 或用命令行：`code --install-extension dsh-harness-vscode-0.1.0.vsix`
+   - 或用命令行：`code --install-extension dsh-harness-vscode-0.7.0.vsix`
 3. **配置 API Key**：`Ctrl+Shift+P` → **DSH: 配置 API Key** → 输入你的 DeepSeek API Key（`sk-...`，在 [platform.deepseek.com](https://platform.deepseek.com) 申请）。
    - Key 保存在**系统密钥链**（VS Code SecretStorage），不写入任何配置文件。
 4. **打开一个项目文件夹**（工作区）。
@@ -23,13 +23,15 @@
 
 - 已全局安装 DSH 命令行：`npm i -g @deepseek-ai/dsh`（安装后新开终端执行 `dsh --version` 应能输出版本号）。
 - 一个 DeepSeek API Key（见上方第 3 步）。
-- VS Code ≥ 1.85，Node ≥ 22（扩展会自动以 `--expose-internals` 启动 dsh 并优先使用 PATH 上的 node；推荐 Node ≥ 24）。
+- VS Code ≥ 1.86，Node ≥ 22（扩展会自动以 `--expose-internals` 启动 dsh 并优先使用 PATH 上的 node；推荐 Node ≥ 24）。
 
 如果 `dsh` 不在 PATH 中，可在扩展设置 `dsh-harness-vscode.cliPath` 中手动指定路径。
 
 ## 使用
 
-- 在聊天面板输入任务，`Enter` 发送。DSH 会在你的项目目录中自主工作（读文件、改代码、跑命令），**运行过程中实时展示思考过程与工具调用**（可折叠的"思考过程"、工具卡片、回答草稿），完成后给出正式答复。
+- 在聊天面板输入任务，`Enter` 发送。DSH 会在你的项目目录中自主工作（读文件、改代码、跑命令），**运行过程中实时展示思考过程与工具调用**（可折叠的"思考过程"、工具卡片、回答草稿，思考按「第 N 轮 · 第 M 步」细分），完成后给出正式答复。
+- **目标（goals）流式呈现**：DSH 使用 goal 工具创建/更新/完成目标时，会以目标卡片实时展示（🎯 创建 / ✏️ 更新 / ⏸ 暂停 / ▶️ 恢复 / ✅ 完成 / 🚧 受阻），并保留到最终思维链轨迹中。
+- **会话自动命名**：任务完成后会话标题由 DSH 自动生成（不再是首条消息截断）。
 - **活动栏侧边栏**：活动栏 DSH 图标 → 侧边栏「状态」显示当前模型/思维强度/沙箱/记忆，并有打开对话、检查环境、兼容性自检、查看/编辑记忆等快捷入口。
 - **内置 Chat 集成**：在 VS Code 内置 Chat（Copilot Chat）里 `@dsh-agent <任务>` 直接唤起，可用 `#文件` 引用作为上下文，答复流式吐回聊天流。
 - **📎 选中代码 / 📄 当前文件**：把编辑器里的选中内容或当前文件挂到输入区上方作为上下文（可随时移除）。
