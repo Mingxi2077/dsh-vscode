@@ -1,16 +1,32 @@
-# DSH Agent for VS Code — 0.7.0 测试方案
+# DSH Agent for VS Code — 0.8.0 测试方案
 
-> 目标版本：0.7.0（本地已安装，需重载窗口生效）
+> 目标版本：0.8.0（本地已安装，需重载窗口生效）
 > 前置：dsh 已装（v0.1.0-rc.6）、DEEPSEEK_API_KEY 已配置、打开一个项目文件夹
 
 ## 0. 部署确认（重载前）
 
 1. 关闭所有 VS Code 窗口 → 重新打开（或 `Ctrl+Shift+P` → `Developer: Reload Window`）。
 2. 活动栏出现 DSH 鲸鱼图标。
-3. 侧边栏「状态」视图显示 `扩展：v0.7.0`（验证加载的是新版本）。
+3. 侧边栏「状态」视图显示 `扩展：v0.8.0`（验证加载的是新版本）。
 4. `Ctrl+Shift+P` → `DSH: 检查环境`，输出面板应显示：
    - `dsh 定位`、`版本`、`API Key: 已配置`、`沙箱模式: workspace-write`
-5. `Ctrl+Shift+P` → `DSH: 兼容性自检`，约 10-20 秒后应提示**自检通过**（验证流式补丁与模型补丁机制仍生效）。
+   - **Provider 配置检查**段（列出已配置 provider）
+5. `Ctrl+Shift+P` → `DSH: 兼容性自检`，约 10-20 秒后应提示**自检通过**。
+
+## 0b. Provider 目录专项（0.8.0 新功能）
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| 0b.1 | 聊天输入 `/provider` | 出现分组列表：「✨ 官方内置提供商」「🛠 已配置的提供商」「手动添加自定义提供商…」 |
+| 0b.2 | 选一个未配置的内置（如 **Anthropic**） | 弹确认「将把 Anthropic 写入 ~/.dsh/settings.yaml…」→ 继续 → 提示输入 API Key → 输入后显示「提供商已切换：Anthropic」 |
+| 0b.3 | 打开 `~/.dsh/settings.yaml` | `llm-pi-ai.providers` 下出现 `anthropic:` 块（只有 displayName + apiKeyEnv，**无 models**）；原 lmuai 块保留；同目录有 `.bak-<时间戳>` 备份 |
+| 0b.4 | `/model` | 列出该 provider 的精选模型清单（Anthropic → claude-opus-4-1 / claude-sonnet-4-5 / claude-haiku-4-5），也可手动输入 |
+| 0b.5 | 再次 `/provider` 选 Anthropic | 不再弹「将写入」确认（已配置），直接进 API Key 步骤（显示已配置） |
+| 0b.6 | `/provider` → 「手动添加自定义提供商…」 | 向导：显示名 → id → 协议（openai-completions/anthropic-messages）→ baseURL → env 名 → 模型列表 → 提示设置 Key |
+| 0b.7 | 完成向导后 `/model` + 发一条消息 | 模型可用该自定义 provider 完成任务 |
+| 0b.8 | `DSH: 检查环境` | Provider 配置检查段列出新加的 provider（含 catalog/自定义标注） |
+
+> ⚠ 若选的内置 provider 无可用 Key，直接选「跳过」也可（用环境变量）；切换后 `/model` 手动输入模型名兜底。
 
 ## 1. 基础对话（回归）
 
