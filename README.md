@@ -47,7 +47,7 @@
 |---|---|
 | `/help` | 显示命令帮助 |
 | `/clear` | 新建会话 |
-| `/provider` | 切换模型提供商，可输入/更新该提供商的 API Key（存系统密钥链） |
+| `/provider` | 切换模型提供商：**官方内置一键接入**（OpenAI / Anthropic / Google / Mistral / Groq / OpenRouter / xAI / Together 等 16 个，填 API Key 即用）或「手动添加自定义提供商」向导（自建网关，OpenAI 兼容或 Anthropic 协议）；API Key 存系统密钥链 |
 | `/model` | 按当前提供商切换模型 |
 | `/effort` | 切换思维强度（off/low/medium/high/max；非推理模型请用 off） |
 | `/skills` | 列出并选择要启用的技能（`~/.dsh/skills` 或 `<项目>/.dsh/skills`，每技能一个目录含 SKILL.md） |

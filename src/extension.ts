@@ -6,10 +6,25 @@ import { execFile } from "child_process";
 import { ChatPanel, StatusBar } from "./chatPanel";
 import { resolveCli, ResolvedCli, runCliVersion, buildSpawnArgs, runDsh } from "./cli";
 import { SecretStore } from "./secrets";
-import { writeModelPatch } from "./modelSelection";
+import { writeModelPatch, readCustomProviders, catalogProviderById } from "./modelSelection";
+import { settingsPath } from "./settingsEditor";
 import { stableHash } from "./sessionStore";
 import { registerChatParticipant } from "./chatParticipant";
 import { registerSidebarView } from "./sidebar";
+
+/** 检查 llm-pi-ai.providers 配置的可服务性（返回多行说明）。 */
+function checkProviderConfig(): string[] {
+  const providers = readCustomProviders();
+  if (providers.length === 0) return ["未配置任何自定义/第三方提供商（内置 DeepSeek 官方可用）。"];
+  const lines = providers.map((p) => {
+    const cat = catalogProviderById(p.id);
+    const kind = cat ? "DSH 内置（catalog）" : "自定义";
+    const hasKey = p.apiKeyEnv ? `${p.apiKeyEnv}（运行时注入）` : "未声明 apiKeyEnv";
+    return `${p.displayName || p.id}（${p.id}）· ${kind} · Key: ${hasKey}`;
+  });
+  lines.push(`共 ${providers.length} 个提供商。模型由 DSH 目录提供，升级后自动跟随。`);
+  return lines;
+}
 
 /** 子进程环境变量提供者：进程环境 + 系统密钥链中的 API Key + 用户配置覆盖。 */
 function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEnv> {
@@ -273,6 +288,11 @@ export function activate(context: vscode.ExtensionContext): void {
         if (permMode === "danger-full-access") {
           void vscode.window.showWarningMessage("⚠ 沙箱模式为 danger-full-access：dsh 将不受限操作且审批自动放行，请确保任务可信。");
         }
+        output.appendLine("");
+        output.appendLine("Provider 配置检查：");
+        output.appendLine(`  settings.yaml: ${settingsPath()}`);
+        const providerCheck = checkProviderConfig();
+        for (const line of providerCheck) output.appendLine(`  ${line}`);
         output.appendLine("");
         output.appendLine("检查通过。打开项目后执行「DSH: 打开对话」即可开始。");
         output.show(true);

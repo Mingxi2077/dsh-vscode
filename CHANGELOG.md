@@ -1,5 +1,14 @@
 # 更新日志
 
+## 0.8.0 (2026-08-15)
+
+### 新增
+
+- **Provider 统一目录**：`/provider` 现在列出 DSH/pi-ai **内置 catalog 提供商**（OpenAI、Anthropic、Google Gemini、Mistral、Groq、OpenRouter、xAI、Together、Cerebras、NVIDIA、Moonshot、MiniMax、Hugging Face、Fireworks、GitHub Copilot 等 16 个），选一个 → 一键写入 `~/.dsh/settings.yaml` 的 `llm-pi-ai.providers`（只需 apiKeyEnv）→ 输入 API Key 即用，全程不碰 YAML。
+- **自定义提供商向导**：`/provider` →「手动添加自定义提供商…」→ 表单输入名称 / id / API 协议（openai-completions / anthropic-messages）/ baseURL / 环境变量名 / 模型列表，自动写入配置并可选保存 API Key。
+- **配置韧性设计**：catalog provider 只写 `apiKeyEnv` 不写 models——模型由 DSH 目录提供，DSH 升级新增模型自动跟随；写入前自动备份 settings.yaml（`.bak-<时间戳>`），失败回滚；已配置的 provider 不重复写入。
+- **`DSH: 检查环境` 增强**：输出 Provider 配置检查段（列出已配置 provider 及 Key 状态）。
+
 ## 0.7.0 (2026-08-15)
 
 ### 新增

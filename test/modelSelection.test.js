@@ -8,6 +8,9 @@ const {
   apiKeyEnvFor,
   readDefaultEffort,
   writeModelPatch,
+  CATALOG_PROVIDERS,
+  catalogProviderById,
+  isCatalogProvider,
 } = require("../out/modelSelection.js");
 const { buildTaskText } = require("../out/taskText.js");
 
@@ -135,4 +138,34 @@ test("buildTaskText 包含会话配置与技能段", () => {
   assert.ok(text.includes("README.md"));
   assert.ok(text.includes("--- 最新用户消息 ---"));
   assert.ok(text.includes("继续"));
+});
+
+test("CATALOG_PROVIDERS：内置清单含常见 provider 且字段完整", () => {
+  assert.ok(CATALOG_PROVIDERS.length >= 10, "应内置至少 10 个 provider");
+  for (const p of CATALOG_PROVIDERS) {
+    assert.ok(p.id && p.id.length > 0, "应有 id");
+    assert.ok(p.displayName, "应有 displayName");
+    assert.equal(p.catalog, true, "内置 provider 应标记 catalog");
+    if (p.apiKeyEnv) assert.match(p.apiKeyEnv, /^[A-Z_]+$/, `apiKeyEnv 应是大写下划线: ${p.apiKeyEnv}`);
+  }
+  // 常见 provider 存在
+  for (const id of ["openai", "anthropic", "google", "openrouter", "mistral", "groq"]) {
+    assert.ok(catalogProviderById(id), `应包含 ${id}`);
+    assert.equal(isCatalogProvider(id), true);
+  }
+  // openai 应有代表模型
+  const openai = catalogProviderById("openai");
+  assert.ok(openai.models && openai.models.length > 0, "openai 应有模型清单");
+  assert.equal(openai.apiKeyEnv, "OPENAI_API_KEY");
+});
+
+test("listModels：catalog provider 返回精选清单；apiKeyEnvFor 映射正确", () => {
+  const models = listModels("openai");
+  assert.ok(models.includes("gpt-5.2"), "openai 精选清单含 gpt-5.2");
+  assert.ok(models.includes("gpt-4o"), "openai 精选清单含 gpt-4o");
+  assert.equal(apiKeyEnvFor("openai"), "OPENAI_API_KEY");
+  assert.equal(apiKeyEnvFor("anthropic"), "ANTHROPIC_API_KEY");
+  assert.equal(apiKeyEnvFor("openrouter"), "OPENROUTER_API_KEY");
+  // deepseek-official 仍是内置固定清单
+  assert.deepEqual(listModels("deepseek-official"), ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash"]);
 });

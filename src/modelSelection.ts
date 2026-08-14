@@ -15,6 +15,12 @@ export interface ProviderInfo {
   displayName: string;
   /** 该提供商读取 API Key 的环境变量名（如 DEEPSEEK_API_KEY）。 */
   apiKeyEnv?: string;
+  /** 该提供商是否是 DSH/pi-ai 内置 catalog provider（只需 apiKeyEnv 即用）。 */
+  catalog?: boolean;
+  /** 内置 provider 的代表性模型 id 清单（用于 /model 快速选择；DSH 目录是权威）。 */
+  models?: string[];
+  /** 需要额外说明的接入方式（如 OAuth / 特殊 env）。 */
+  note?: string;
 }
 
 /** 内置 deepseek-official 提供商（DSH 出厂自带，无需配置）。 */
@@ -27,6 +33,56 @@ export const DEEPSEEK_PROVIDER: ProviderInfo = {
 export const DEEPSEEK_MODELS = ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash"];
 
 export const REASONING_EFFORTS = ["off", "low", "medium", "high", "max"];
+
+/**
+ * DSH/pi-ai 内置 catalog 提供商精选清单（官方更新模型时 DSH 目录自动跟随，
+ * 这里只提供 /model 的快速选择；catalog route 配置不写 models，避免过时）。
+ * apiKeyEnv 与 pi-ai 的 getApiKeyEnvVars 映射保持一致。
+ */
+export const CATALOG_PROVIDERS: ProviderInfo[] = [
+  { id: "openai", displayName: "OpenAI", apiKeyEnv: "OPENAI_API_KEY", catalog: true,
+    models: ["gpt-5.4", "gpt-5.2", "gpt-5", "gpt-4.1", "gpt-4o", "gpt-4o-mini", "o4-mini"] },
+  { id: "anthropic", displayName: "Anthropic", apiKeyEnv: "ANTHROPIC_API_KEY", catalog: true,
+    models: ["claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5"] },
+  { id: "google", displayName: "Google Gemini", apiKeyEnv: "GEMINI_API_KEY", catalog: true,
+    models: ["gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"] },
+  { id: "mistral", displayName: "Mistral", apiKeyEnv: "MISTRAL_API_KEY", catalog: true,
+    models: ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "codestral-latest"] },
+  { id: "groq", displayName: "Groq", apiKeyEnv: "GROQ_API_KEY", catalog: true,
+    models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "llama-3.1-8b-instant"] },
+  { id: "openrouter", displayName: "OpenRouter", apiKeyEnv: "OPENROUTER_API_KEY", catalog: true,
+    models: ["openai/gpt-5.2", "anthropic/claude-sonnet-4.5", "google/gemini-3.5-flash", "deepseek/deepseek-v4-flash"] },
+  { id: "xai", displayName: "xAI (Grok)", apiKeyEnv: "XAI_API_KEY", catalog: true,
+    models: ["grok-4.5", "grok-4.3"] },
+  { id: "together", displayName: "Together AI", apiKeyEnv: "TOGETHER_API_KEY", catalog: true,
+    models: ["deepseek-ai/DeepSeek-V4-Pro", "Qwen/Qwen3.7-Max", "meta-llama/Llama-3.3-70B-Instruct-Turbo"] },
+  { id: "cerebras", displayName: "Cerebras", apiKeyEnv: "CEREBRAS_API_KEY", catalog: true,
+    models: [] },
+  { id: "nvidia", displayName: "NVIDIA NIM", apiKeyEnv: "NVIDIA_API_KEY", catalog: true,
+    models: [] },
+  { id: "moonshotai", displayName: "Moonshot AI (Kimi)", apiKeyEnv: "MOONSHOT_API_KEY", catalog: true,
+    models: ["kimi-k2.7-code", "kimi-k2"] },
+  { id: "minimax", displayName: "MiniMax", apiKeyEnv: "MINIMAX_API_KEY", catalog: true,
+    models: ["MiniMax-M2.7"] },
+  { id: "huggingface", displayName: "Hugging Face", apiKeyEnv: "HF_TOKEN", catalog: true,
+    models: [] },
+  { id: "fireworks", displayName: "Fireworks AI", apiKeyEnv: "FIREWORKS_API_KEY", catalog: true,
+    models: [] },
+  { id: "deepseek", displayName: "DeepSeek (catalog)", apiKeyEnv: "DEEPSEEK_API_KEY", catalog: true,
+    models: ["deepseek-v4-flash", "deepseek-v4-pro"] },
+  { id: "github-copilot", displayName: "GitHub Copilot", apiKeyEnv: "COPILOT_GITHUB_TOKEN", catalog: true,
+    models: [], note: "需 GitHub Copilot 订阅 token（fine-grained 含 Copilot 权限）" },
+];
+
+/** 查找内置 catalog provider（按 id）。 */
+export function catalogProviderById(id: string): ProviderInfo | undefined {
+  return CATALOG_PROVIDERS.find((p) => p.id === id);
+}
+
+/** 某个 provider 是否 DSH 内置 catalog（无需手写 baseURL/协议）。 */
+export function isCatalogProvider(id: string): boolean {
+  return !!catalogProviderById(id);
+}
 
 export function defaultSettingsPath(): string {
   return path.join(os.homedir(), ".dsh", "settings.yaml");
@@ -69,9 +125,12 @@ export function readCustomProviders(settingsPath = defaultSettingsPath()): Provi
   return providers;
 }
 
-/** 某提供商的模型列表。 */
+/** 某提供商的模型列表。内置 deepseek-official 用固定清单；catalog provider 用精选清单；
+ * 手写自定义 provider 从 settings.yaml 的 models 读取。 */
 export function listModels(providerId: string, settingsPath = defaultSettingsPath()): string[] {
   if (providerId === DEEPSEEK_PROVIDER.id) return [...DEEPSEEK_MODELS];
+  const cat = catalogProviderById(providerId);
+  if (cat?.catalog) return [...(cat.models ?? [])];
   let raw: string;
   try {
     raw = fs.readFileSync(settingsPath, "utf8");
@@ -132,6 +191,8 @@ export function readDefaultSelection(settingsPath = defaultSettingsPath()): Mode
 /** 读取某提供商应注入的环境变量名（用于 /provider 输入 API Key）。 */
 export function apiKeyEnvFor(providerId: string, settingsPath = defaultSettingsPath()): string | undefined {
   if (providerId === DEEPSEEK_PROVIDER.id) return DEEPSEEK_PROVIDER.apiKeyEnv;
+  const cat = catalogProviderById(providerId);
+  if (cat?.catalog) return cat.apiKeyEnv;
   const provider = readCustomProviders(settingsPath).find((p) => p.id === providerId);
   return provider?.apiKeyEnv;
 }

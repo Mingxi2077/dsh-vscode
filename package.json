@@ -2,7 +2,7 @@
   "name": "dsh-harness-vscode",
   "displayName": "DSH Agent for VS Code",
   "description": "在 VS Code 里像 Claude Code 一样使用 DeepSeek Harness（DSH）：无服务依赖，直接驱动 dsh --profile headless，实时展示思考链与工具调用，含长期记忆、/compact /model /provider、代码应用到文件与 token/缓存用量显示。",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "mingxi2077",
   "license": "MIT",
   "icon": "media/icon.png",
