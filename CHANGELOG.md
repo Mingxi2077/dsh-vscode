@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1 (2026-08-15)
+
+### Fixed
+
+- **Critical: preset disable corrupted cordis.patch.yml**: disabling the last mode preset left a comment-only file with no YAML array, which made DSH fail to start with "must be a top-level YAML array". Disabling now always keeps an empty `[]` array; `readPatch` also self-heals comment-only files.
+
 ## 0.9.0 (2026-08-15)
 
 ### Added
