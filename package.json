@@ -10,6 +10,20 @@
     "color": "#0f172a",
     "theme": "dark"
   },
+  "screenshots": [
+    {
+      "url": "https://raw.githubusercontent.com/Mingxi2077/dsh-vscode/main/media/screenshots/chat-panel.png",
+      "path": "media/screenshots/chat-panel.png"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Mingxi2077/dsh-vscode/main/media/screenshots/tool-trail.png",
+      "path": "media/screenshots/tool-trail.png"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Mingxi2077/dsh-vscode/main/media/screenshots/full-session.png",
+      "path": "media/screenshots/full-session.png"
+    }
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/Mingxi2077/dsh-vscode"
