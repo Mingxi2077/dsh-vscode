@@ -1,0 +1,19 @@
+{
+  "command.openChat": "DSH: Open Chat",
+  "command.pluginCenter": "DSH: Plugin Center",
+  "command.presetCenter": "DSH: Mode Presets",
+  "command.configureApiKey": "DSH: Set API Key",
+  "command.checkEnvironment": "DSH: Check Environment",
+  "command.selfTest": "DSH: Compatibility Self-Test (run a test task)",
+  "command.newSession": "DSH: New Session",
+  "command.cancelRun": "DSH: Cancel Current Task",
+  "command.addSelection": "DSH: Add Selection to Context",
+  "command.addOpenFile": "DSH: Add Current File to Context",
+  "command.askAboutFile": "DSH: Ask About This File",
+  "command.quickExplainFile": "DSH: Explain Current File",
+  "command.quickReviewChanges": "DSH: Review Current Changes (git diff)",
+  "command.quickWriteTests": "DSH: Write Tests for Current File",
+  "command.openTerminal": "DSH: Open dsh Terminal",
+  "command.editMemory": "DSH: Edit Project Memory",
+  "command.showMemory": "DSH: View Project Memory"
+}

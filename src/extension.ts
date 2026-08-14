@@ -13,6 +13,7 @@ import { registerChatParticipant } from "./chatParticipant";
 import { registerSidebarView } from "./sidebar";
 import { openPluginCenter, pluginStatusSummary } from "./pluginCenter";
 import { openPresetCenter, presetStatusSummary } from "./presetCenter";
+import { t } from "./i18n";
 
 /** 检查 llm-pi-ai.providers 配置的可服务性（返回多行说明）。 */
 function checkProviderConfig(): string[] {
@@ -53,16 +54,16 @@ function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEn
 /** 检测 DEEPSEEK_API_KEY 是否可用（不打印内容）。 */
 async function apiKeyStatus(secrets: SecretStore): Promise<string> {
   const secret = await secrets.get("DEEPSEEK_API_KEY");
-  if (secret) return "已配置（系统密钥链）";
-  if (process.env.DEEPSEEK_API_KEY) return "已配置（环境变量 DEEPSEEK_API_KEY）";
+  if (secret) return t("已配置（系统密钥链）", "configured (system keychain)");
+  if (process.env.DEEPSEEK_API_KEY) return t("已配置（环境变量 DEEPSEEK_API_KEY）", "configured (env DEEPSEEK_API_KEY)");
   const credFile = path.join(os.homedir(), ".dsh", ".credentials.yaml");
   try {
     const raw = fs.readFileSync(credFile, "utf8");
-    if (/DEEPSEEK_API_KEY\s*:/.test(raw)) return "已配置（~/.dsh/.credentials.yaml）";
+    if (/DEEPSEEK_API_KEY\s*:/.test(raw)) return t("已配置（~/.dsh/.credentials.yaml）", "configured (~/.dsh/.credentials.yaml)");
   } catch {
     // 文件不存在或不可读，按未配置处理
   }
-  return "未配置 → 请运行「DSH: 配置 API Key」";
+  return t("未配置 → 请运行「DSH: 配置 API Key」", "not set → run \"DSH: Set API Key\"");
 }
 
 /** 状态栏控制器：运行中指示 + 就绪状态。 */
@@ -131,7 +132,7 @@ async function pickFolder(): Promise<vscode.WorkspaceFolder | undefined> {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     void vscode.window.showWarningMessage(
-      "请先通过「文件 → 打开文件夹」打开一个项目，再使用 DSH。"
+      t("请先通过「文件 → 打开文件夹」打开一个项目，再使用 DSH。", "Open a project folder first (File → Open Folder), then use DSH.")
     );
     return undefined;
   }
@@ -239,7 +240,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const folder = await pickFolder();
       if (!folder) return;
       panel = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-      status.setReady(true, "DSH: 打开对话面板");
+      status.setReady(true, "DSH: " + t("打开对话面板", "Open Chat panel"));
     }),
 
     // 配置 API Key：普通用户第一步，保存在系统密钥链（VS Code SecretStorage）
@@ -248,37 +249,37 @@ export function activate(context: vscode.ExtensionContext): void {
       const pick = await vscode.window.showQuickPick(
         [
           {
-            label: "设置 DeepSeek API Key",
-            description: "保存在系统密钥链中，不写入任何配置文件",
+            label: t("设置 DeepSeek API Key", "Set DeepSeek API Key"),
+            description: t("保存在系统密钥链中，不写入任何配置文件", "Stored in the system keychain, never written to any config file"),
           },
           {
-            label: "清除已保存的 API Key",
-            description: hasSecret ? "当前已配置" : "当前未配置",
+            label: t("清除已保存的 API Key", "Clear saved API Key"),
+            description: hasSecret ? t("当前已配置", "currently set") : t("当前未配置", "not set"),
           },
         ],
-        { placeHolder: "DSH API Key 管理" }
+        { placeHolder: "DSH API Key" }
       );
       if (!pick) return;
 
-      if (pick.label.startsWith("设置")) {
+      if (pick.label.startsWith(t("设置", "Set"))) {
         const key = await vscode.window.showInputBox({
-          prompt: "输入 DeepSeek API Key（sk- 开头，在 platform.deepseek.com 申请）",
+          prompt: t("输入 DeepSeek API Key（sk- 开头，在 platform.deepseek.com 申请）", "Enter your DeepSeek API Key (starts with sk-, get one at platform.deepseek.com)"),
           password: true,
           ignoreFocusOut: true,
           placeHolder: "sk-...",
-          validateInput: (v) => (v && v.trim().length > 0 ? undefined : "API Key 不能为空"),
+          validateInput: (v) => (v && v.trim().length > 0 ? undefined : t("API Key 不能为空", "API key cannot be empty")),
         });
         if (key) {
           await secrets.set("DEEPSEEK_API_KEY", key.trim());
-          status.setReady(true, "DSH API Key 已配置");
+          status.setReady(true, "DSH API Key " + t("已配置", "set"));
           void vscode.window.showInformationMessage(
-            "API Key 已保存到系统密钥链。现在可以「DSH: 打开对话」开始使用了。"
+            t("API Key 已保存到系统密钥链。现在可以「DSH: 打开对话」开始使用了。", "API key saved to the system keychain. You can now run \"DSH: Open Chat\" to start.")
           );
         }
       } else {
         await secrets.delete("DEEPSEEK_API_KEY");
-        status.setReady(hasSecret, hasSecret ? "DSH: API Key 已清除" : "DSH: 尚未配置 API Key");
-        void vscode.window.showInformationMessage("已清除 API Key。");
+        status.setReady(hasSecret, hasSecret ? "DSH: API Key " + t("已清除", "cleared") : "DSH: API Key " + t("尚未配置", "not set"));
+        void vscode.window.showInformationMessage(t("已清除 API Key。", "API key cleared."));
       }
     }),
 

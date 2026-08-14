@@ -20,6 +20,7 @@ import {
   writeProviderToSettings,
 } from "./settingsEditor";
 import { listSkills } from "./skills";
+import { t, tf } from "./i18n";
 
 /** slash 命令需要的最小宿主能力。 */
 export interface ChatCommandHost {
@@ -46,7 +47,7 @@ export interface ChatCommandHost {
   statusLine(): string;
 }
 
-export const SLASH_HELP = [
+export const SLASH_HELP_ZH = [
   "/help             显示本帮助",
   "/clear            新建会话（清空当前对话）",
   "/memory           查看项目长期记忆",
@@ -61,6 +62,21 @@ export const SLASH_HELP = [
   "/status           查看当前配置与用量",
 ].join("\n");
 
+export const SLASH_HELP_EN = [
+  "/help             Show this help",
+  "/clear            New session (clear current chat)",
+  "/memory           Show project long-term memory",
+  "/edit-memory      Open the memory file in the editor",
+  "/remember <text>  Add a fact to project long-term memory",
+  "/context          Show attached context",
+  "/provider         Switch model provider (can input API key)",
+  "/model            Switch model",
+  "/effort           Switch reasoning effort (off/low/medium/high/max)",
+  "/skills           Choose enabled skills",
+  "/compact          Compact the session into a summary",
+  "/status           Show current config & usage",
+].join("\n");
+
 /** 处理聊天输入中的 slash 命令。 */
 export function handleSlashCommand(host: ChatCommandHost, raw: string): void {
   const parts = raw.trim().split(/\s+/);
@@ -68,7 +84,7 @@ export function handleSlashCommand(host: ChatCommandHost, raw: string): void {
   const rest = raw.trim().slice(cmd.length).trim();
   switch (cmd) {
     case "/help":
-      host.post({ type: "appendMessage", message: host.systemMessage(SLASH_HELP) });
+      host.post({ type: "appendMessage", message: host.systemMessage(t(SLASH_HELP_ZH, SLASH_HELP_EN)) });
       break;
     case "/clear":
       host.newSession();
@@ -83,23 +99,28 @@ export function handleSlashCommand(host: ChatCommandHost, raw: string): void {
       if (!rest) {
         host.post({
           type: "appendMessage",
-          message: host.systemMessage("用法：/remember <要记住的内容>，例如：/remember 构建命令是 npm run build"),
+          message: host.systemMessage(
+            t(
+              "用法：/remember <要记住的内容>，例如：/remember 构建命令是 npm run build",
+              "Usage: /remember <content>, e.g. /remember build command is npm run build"
+            )
+          ),
         });
         break;
       }
       host.memory.append(rest);
       host.post({
         type: "appendMessage",
-        message: host.systemMessage(`已记入项目长期记忆：${rest}`),
+        message: host.systemMessage(tf(t("已记入项目长期记忆：{0}", "Saved to project memory: {0}"), rest)),
       });
       break;
     }
     case "/context": {
       const summary =
         host.contextBlocks.length === 0
-          ? "（当前没有挂载的上下文）"
+          ? t("（当前没有挂载的上下文）", "(no context attached)")
           : host.contextBlocks.map((b) => `- [${b.kind}] ${b.label}`).join("\n");
-      host.post({ type: "appendMessage", message: host.systemMessage(`当前上下文：\n${summary}`) });
+      host.post({ type: "appendMessage", message: host.systemMessage(tf(t("当前上下文：\n{0}", "Current context:\n{0}"), summary)) });
       break;
     }
     case "/provider":
@@ -123,7 +144,7 @@ export function handleSlashCommand(host: ChatCommandHost, raw: string): void {
     default:
       host.post({
         type: "appendMessage",
-        message: host.systemMessage(`未知命令「${cmd}」。支持的命令：\n${SLASH_HELP}`),
+        message: host.systemMessage(tf(t("未知命令「{0}」。支持的命令：\n{1}", "Unknown command \"{0}\". Supported commands:\n{1}"), cmd, t(SLASH_HELP_ZH, SLASH_HELP_EN))),
       });
   }
 }

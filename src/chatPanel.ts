@@ -21,6 +21,7 @@ import {
   providerDisplayName,
 } from "./modelSelection";
 import { refreshSidebarStatus } from "./sidebar";
+import { t, tf } from "./i18n";
 
 /** 用户在输入区上方挂载的上下文块（选中代码 / 文件片段）。 */
 export interface ContextBlock {
@@ -426,7 +427,7 @@ export class ChatPanel {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.status.setReady(false, `DSH: ${message}`);
-      return this.systemMessage(`无法解析 dsh 命令：${message}`);
+      return this.systemMessage(tf(t("无法解析 dsh 命令：{0}", "Cannot resolve dsh command: {0}"), message));
     }
     try {
       const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
@@ -542,34 +543,37 @@ export class ChatPanel {
       await tracerDone;
 
       if (abort.signal.aborted) {
-        return this.systemMessage("已取消任务。");
+        return this.systemMessage(t("已取消任务。", "Task cancelled."));
       }
       if (result.timedOut) {
         return this.systemMessage(
-          `任务超时（超过 ${timeoutSec} 秒）已被取消。可在设置 dsh-harness-vscode.timeoutSeconds 中调整。`
+          tf(t("任务超时（超过 {0} 秒）已被取消。可在设置 dsh-harness-vscode.timeoutSeconds 中调整。", "Task timed out after {0}s and was cancelled. Adjust dsh-harness-vscode.timeoutSeconds in settings."), timeoutSec)
         );
       }
       if (result.code !== 0) {
         const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
         if (/MISSING_CREDENTIAL|no API key/i.test(result.stderr)) {
           return this.systemMessage(
-            `检测到未配置 API Key。请执行「DSH: 配置 API Key」输入 DeepSeek API Key（sk-...），` +
-              `或在系统环境变量中设置 DEEPSEEK_API_KEY。\n\n原始错误：\n${detail}`
+            t(
+              `检测到未配置 API Key。请执行「DSH: 配置 API Key」输入 DeepSeek API Key（sk-...），或在系统环境变量中设置 DEEPSEEK_API_KEY。\n\n原始错误：\n${detail}`,
+              `No API key configured. Run "DSH: Set API Key" to enter your DeepSeek API key (sk-...), or set DEEPSEEK_API_KEY in your environment.\n\nRaw error:\n${detail}`
+            )
           );
         }
         return this.systemMessage(
-          `dsh 任务失败（exit code ${result.code ?? "?"}）${detail ? `:\n${detail}` : ""}`
+          tf(t("dsh 任务失败（exit code {0}）{1}", "dsh task failed (exit code {0}){1}"), result.code ?? "?", detail ? `:\n${detail}` : "")
         );
       }
       const answer = result.stdout.trim();
-      let content = answer.length > 0 ? answer : "（dsh 未返回文本输出）";
+      let content = answer.length > 0 ? answer : t("（dsh 未返回文本输出）", "(dsh returned no text output)");
       if (tracer && cfg.get<boolean>("debugStreaming", false)) {
         const s = tracer.stats();
         content +=
-          "\n\n— 流式诊断：" +
+          "\n\n— " +
+          t("流式诊断：", "Streaming diagnostics: ") +
           (s.found
-            ? `已 tail 会话日志，解析 ${s.eventsParsed} 条事件`
-            : "未找到明文会话日志（--patch 未生效：请确认 dsh 版本支持 compression: none，或查看输出面板 DSH 日志）");
+            ? tf(t("已 tail 会话日志，解析 {0} 条事件", "tailed session log, parsed {0} events"), s.eventsParsed)
+            : t("未找到明文会话日志（--patch 未生效：请确认 dsh 版本支持 compression: none，或查看输出面板 DSH 日志）", "No plain session log found (--patch not effective: check dsh supports compression: none, or see the DSH output panel)"));
       }
       return {
         id: UUID(),
@@ -580,7 +584,7 @@ export class ChatPanel {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return this.systemMessage(`运行 dsh 失败：${message}`);
+      return this.systemMessage(tf(t("运行 dsh 失败：{0}", "Failed to run dsh: {0}"), message));
     }
   }
 

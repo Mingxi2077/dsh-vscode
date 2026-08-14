@@ -1,23 +1,23 @@
-# 更新日志
+# Changelog
 
 ## 0.9.0 (2026-08-15)
 
-### 新增
+### Added
 
-- **DSH 模式预设**：「DSH: 模式预设」命令可启用/停用 DSH 原生行为预设（写入 headless profile 的 cordis.patch.yml，按 id 覆盖插件配置）：
-  - **自动会话压缩**：启用 DSH 自动压缩（上下文压力 80% 阈值自动压缩，保留 20% 关键信息），长对话不爆上下文
-  - **严格计划模式（中文）**：覆盖 plan-mode 指令为中文强化版——先出完整计划再动手，禁止未经批准执行变更
-  - 预设状态显示在「DSH: 检查环境」输出中
-- **插件中心（查看）**：「DSH: 插件中心」列出 headless profile 当前已装插件（激活/未激活状态），并提供安装/卸载操作（支持真实存在 npm 包）。
+- **DSH mode presets**: the "DSH: Mode Presets" command enables/disables DSH native behavior presets (written to headless profile `cordis.patch.yml`, overriding plugin config by id):
+  - **Auto compaction**: DSH auto-compacts at 80% context pressure, keeping 20% key info — long conversations never blow the context window.
+  - **Strict plan mode (Chinese)**: plan-mode instructions overridden to a Chinese, more rigorous version — produce a full plan before acting, no unapproved changes.
+  - Preset status appears in "DSH: Check Environment" output.
+- **Plugin center (view)**: "DSH: Plugin Center" lists installed plugins in the headless profile (active/inactive) with install/uninstall for real npm packages.
 
 ## 0.8.0 (2026-08-15)
 
-### 新增
+### Added
 
-- **Provider 统一目录**：`/provider` 现在列出 DSH/pi-ai **内置 catalog 提供商**（OpenAI、Anthropic、Google Gemini、Mistral、Groq、OpenRouter、xAI、Together、Cerebras、NVIDIA、Moonshot、MiniMax、Hugging Face、Fireworks、GitHub Copilot 等 16 个），选一个 → 一键写入 `~/.dsh/settings.yaml` 的 `llm-pi-ai.providers`（只需 apiKeyEnv）→ 输入 API Key 即用，全程不碰 YAML。
-- **自定义提供商向导**：`/provider` →「手动添加自定义提供商…」→ 表单输入名称 / id / API 协议（openai-completions / anthropic-messages）/ baseURL / 环境变量名 / 模型列表，自动写入配置并可选保存 API Key。
-- **配置韧性设计**：catalog provider 只写 `apiKeyEnv` 不写 models——模型由 DSH 目录提供，DSH 升级新增模型自动跟随；写入前自动备份 settings.yaml（`.bak-<时间戳>`），失败回滚；已配置的 provider 不重复写入。
-- **`DSH: 检查环境` 增强**：输出 Provider 配置检查段（列出已配置 provider 及 Key 状态）。
+- **Unified provider catalog**: `/provider` now lists DSH/pi-ai **built-in catalog providers** (OpenAI, Anthropic, Google Gemini, Mistral, Groq, OpenRouter, xAI, Together, Cerebras, NVIDIA, Moonshot, MiniMax, Hugging Face, Fireworks, GitHub Copilot — 16 total); pick one → one-click write to `llm-pi-ai.providers` in `~/.dsh/settings.yaml` (apiKeyEnv only) → enter API key → ready to use, no YAML editing.
+- **Custom provider wizard**: `/provider` → "Add custom provider…" → form for name / id / API protocol (openai-completions / anthropic-messages) / baseURL / env var / model list, writes config and optionally saves the API key.
+- **Config resilience**: catalog providers write only `apiKeyEnv` (models come from the DSH catalog, auto-follows upgrades); backup before write (`.bak-<timestamp>`), rollback on failure; idempotent.
+- **"DSH: Check Environment" enhanced**: outputs a Provider config section (configured providers and key status).
 
 ## 0.7.0 (2026-08-15)
 

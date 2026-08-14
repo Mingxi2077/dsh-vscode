@@ -1,7 +1,7 @@
 {
   "name": "dsh-harness-vscode",
   "displayName": "DSH Agent for VS Code",
-  "description": "在 VS Code 里像 Claude Code 一样使用 DeepSeek Harness（DSH）：无服务依赖，直接驱动 dsh --profile headless，实时展示思考链与工具调用，含长期记忆、/compact /model /provider、代码应用到文件与 token/缓存用量显示。",
+  "description": "Use DeepSeek Harness (DSH) in VS Code like Claude Code: no service dependency, drives dsh --profile headless directly, streams thinking chain and tool calls in real time, with long-term memory, /compact /model /provider, apply-code-to-file, and token/cache usage display.",
   "version": "0.9.0",
   "publisher": "mingxi2077",
   "license": "MIT",
@@ -54,90 +54,90 @@
     "commands": [
       {
         "command": "dsh-harness-vscode.openChat",
-        "title": "DSH: 打开对话",
+        "title": "%command.openChat%",
         "category": "DSH",
         "icon": "$(comment-discussion)"
       },
       {
         "command": "dsh-harness-vscode.pluginCenter",
-        "title": "DSH: 插件中心",
+        "title": "%command.pluginCenter%",
         "category": "DSH",
         "icon": "$(extensions)"
       },
       {
         "command": "dsh-harness-vscode.presetCenter",
-        "title": "DSH: 模式预设",
+        "title": "%command.presetCenter%",
         "category": "DSH",
         "icon": "$(settings-gear)"
       },
       {
         "command": "dsh-harness-vscode.configureApiKey",
-        "title": "DSH: 配置 API Key",
+        "title": "%command.configureApiKey%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.checkEnvironment",
-        "title": "DSH: 检查环境",
+        "title": "%command.checkEnvironment%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.selfTest",
-        "title": "DSH: 兼容性自检（运行测试任务）",
+        "title": "%command.selfTest%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.newSession",
-        "title": "DSH: 新建会话",
+        "title": "%command.newSession%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.cancelRun",
-        "title": "DSH: 取消当前任务",
+        "title": "%command.cancelRun%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.addSelection",
-        "title": "DSH: 把选中代码加入上下文",
+        "title": "%command.addSelection%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.addOpenFile",
-        "title": "DSH: 把当前文件加入上下文",
+        "title": "%command.addOpenFile%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.askAboutFile",
-        "title": "DSH: 询问此文件",
+        "title": "%command.askAboutFile%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.quickExplainFile",
-        "title": "DSH: 解释当前文件",
+        "title": "%command.quickExplainFile%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.quickReviewChanges",
-        "title": "DSH: 审查当前改动 (git diff)",
+        "title": "%command.quickReviewChanges%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.quickWriteTests",
-        "title": "DSH: 为当前文件写测试",
+        "title": "%command.quickWriteTests%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.openTerminal",
-        "title": "DSH: 打开 dsh 终端",
+        "title": "%command.openTerminal%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.editMemory",
-        "title": "DSH: 编辑项目记忆",
+        "title": "%command.editMemory%",
         "category": "DSH"
       },
       {
         "command": "dsh-harness-vscode.showMemory",
-        "title": "DSH: 查看项目记忆",
+        "title": "%command.showMemory%",
         "category": "DSH"
       }
     ],
@@ -179,7 +179,7 @@
         "dsh-harness-vscode.cliPath": {
           "type": "string",
           "default": "",
-          "description": "dsh 可执行文件的绝对路径，或 @deepseek-ai/dsh 的 lib/bin.js 的绝对路径。留空则自动从 PATH 解析。"
+          "description": "Absolute path to the dsh executable or @deepseek-ai/dsh's lib/bin.js. Empty = resolve from PATH automatically."
         },
         "dsh-harness-vscode.extraArgs": {
           "type": "array",
@@ -187,14 +187,14 @@
             "type": "string"
           },
           "default": [],
-          "description": "附加到 dsh 启动命令的额外参数（在 --profile headless 之后追加，如 --patch <path>）。"
+          "description": "Extra args appended to the dsh launch command (after --profile headless, e.g. --patch <path>)."
         },
         "dsh-harness-vscode.timeoutSeconds": {
           "type": "number",
           "default": 600,
           "minimum": 30,
           "maximum": 7200,
-          "description": "单次任务的超时秒数，超时后自动取消。"
+          "description": "Timeout in seconds for a single task; auto-cancelled when exceeded."
         },
         "dsh-harness-vscode.environment": {
           "type": "object",
@@ -202,31 +202,31 @@
             "type": "string"
           },
           "default": {},
-          "description": "传给 dsh 子进程的额外环境变量（如 API Key）。"
+          "description": "Extra environment variables passed to the dsh subprocess (e.g. API keys)."
         },
         "dsh-harness-vscode.historyMessages": {
           "type": "number",
           "default": 20,
           "minimum": 1,
           "maximum": 100,
-          "description": "拼入任务文本的最近对话消息条数（用于延续上下文）。"
+          "description": "Number of recent chat messages folded into the task text (for multi-turn continuity)."
         },
         "dsh-harness-vscode.maxMessageChars": {
           "type": "number",
           "default": 8000,
           "minimum": 500,
           "maximum": 100000,
-          "description": "单条历史消息拼入任务文本的最大字符数。"
+          "description": "Max characters of a single history message folded into the task text."
         },
         "dsh-harness-vscode.streamProgress": {
           "type": "boolean",
           "default": true,
-          "description": "实时展示思维链与工具调用过程（通过 tail DSH 会话事件日志实现；关闭后仅显示最终答复）。"
+          "description": "Stream the thinking chain and tool calls live (tails the DSH session event log); off = final answer only."
         },
         "dsh-harness-vscode.debugStreaming": {
           "type": "boolean",
           "default": false,
-          "description": "调试：在每次答复末尾追加流式诊断（是否找到会话日志、解析了多少事件）。"
+          "description": "Debug: append streaming diagnostics at the end of each answer (whether the session log was found, how many events parsed)."
         },
         "dsh-harness-vscode.permissionMode": {
           "type": "string",
@@ -236,7 +236,7 @@
             "danger-full-access"
           ],
           "default": "workspace-write",
-          "description": "传给 dsh 的沙箱权限模式（DSH_PERMISSION_MODE）。read-only 只读；workspace-write 可读写工作区内文件；danger-full-access 完全不受限且审批自动放行（仅在你完全信任 dsh 与任务时使用）。"
+          "description": "Sandbox permission mode passed to dsh (DSH_PERMISSION_MODE). read-only: read only; workspace-write: read/write inside the workspace; danger-full-access: fully unrestricted with auto-approval (only when you fully trust dsh and the task)."
         }
       }
     }

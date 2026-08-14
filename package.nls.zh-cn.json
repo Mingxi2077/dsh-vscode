@@ -1,0 +1,19 @@
+{
+  "command.openChat": "DSH: 打开对话",
+  "command.pluginCenter": "DSH: 插件中心",
+  "command.presetCenter": "DSH: 模式预设",
+  "command.configureApiKey": "DSH: 配置 API Key",
+  "command.checkEnvironment": "DSH: 检查环境",
+  "command.selfTest": "DSH: 兼容性自检（运行测试任务）",
+  "command.newSession": "DSH: 新建会话",
+  "command.cancelRun": "DSH: 取消当前任务",
+  "command.addSelection": "DSH: 把选中代码加入上下文",
+  "command.addOpenFile": "DSH: 把当前文件加入上下文",
+  "command.askAboutFile": "DSH: 询问此文件",
+  "command.quickExplainFile": "DSH: 解释当前文件",
+  "command.quickReviewChanges": "DSH: 审查当前改动 (git diff)",
+  "command.quickWriteTests": "DSH: 为当前文件写测试",
+  "command.openTerminal": "DSH: 打开 dsh 终端",
+  "command.editMemory": "DSH: 编辑项目记忆",
+  "command.showMemory": "DSH: 查看项目记忆"
+}
