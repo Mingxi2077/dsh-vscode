@@ -130,3 +130,45 @@ test("SessionTracer：step/start-end、session/title、assistant/chunk block-end
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("SessionTracer：goal/change 归一化为目标进度消息", async () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-tracer-"));
+  try {
+    const home = path.join(root, "home");
+    const sessionsDir = path.join(home, "sessions-vscode");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const tracer = new SessionTracer({ DSH_HOME: home }, Date.now());
+    const sessionDir = path.join(sessionsDir, "bucket", "session-test-3");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const log = path.join(sessionDir, "session.jsonl");
+
+    const lines = [
+      '{"type":"session","version":0,"id":"s3","createdAt":1,"cwd":"C:\\\\p","delegationDepth":0}',
+      '{"type":"turn/start","seq":0,"time":1,"data":{"turn":1}}',
+      '{"type":"goal/change","seq":1,"time":2,"data":{"kind":"goal/change","version":1,"operation":"create","goal":{"id":"goal-abc","revision":1,"objective":"测试目标","phase":"active","maxGoalRounds":256},"roundsStarted":0,"createdAt":2,"updatedAt":2}}',
+      '{"type":"goal/change","seq":2,"time":3,"data":{"kind":"goal/change","version":1,"operation":"complete","goal":{"id":"goal-abc","revision":2,"objective":"测试目标","phase":"complete","maxGoalRounds":256},"roundsStarted":1,"createdAt":2,"updatedAt":3}}',
+      '{"type":"turn/end","seq":3,"time":4,"data":{"turn":1,"reason":{"kind":"completed"}}}',
+    ];
+
+    const messages = [];
+    const signal = new AbortController().signal;
+    const runPromise = tracer.start((m) => messages.push(m), signal);
+    await sleep(400);
+    fs.writeFileSync(log, lines.join("\n") + "\n");
+    await sleep(350);
+    tracer.finish();
+    await runPromise;
+
+    const goals = messages.filter((m) => m.kind === "goal");
+    assert.equal(goals.length, 2, "应收到两条 goal/change");
+    assert.equal(goals[0].operation, "create");
+    assert.equal(goals[0].id, "goal-abc");
+    assert.equal(goals[0].objective, "测试目标");
+    assert.equal(goals[0].phase, "active");
+    assert.equal(goals[1].operation, "complete");
+    assert.equal(goals[1].phase, "complete");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

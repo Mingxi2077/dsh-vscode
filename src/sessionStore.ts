@@ -6,7 +6,8 @@ export type ChatRole = "user" | "assistant" | "system";
 /** 思维链轨迹块：保留回答背后的思考过程与工具调用，可折叠展示。 */
 export type TraceBlock =
   | { kind: "reasoning"; text: string }
-  | { kind: "tool"; name: string; args: string; result?: string; isError?: boolean };
+  | { kind: "tool"; name: string; args: string; result?: string; isError?: boolean }
+  | { kind: "goal"; objective: string; operation: string };
 
 export interface ChatMessage {
   id: string;

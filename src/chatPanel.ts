@@ -55,7 +55,8 @@ function fmtNum(n: number): string {
 function buildTrace(
   order: string[],
   reasoningMap: Map<string, string>,
-  toolMap: Map<string, { name: string; args: string; result?: string; isError?: boolean }>
+  toolMap: Map<string, { name: string; args: string; result?: string; isError?: boolean }>,
+  goalMap: Map<string, { objective: string; operation: string }>
 ): TraceBlock[] | undefined {
   if (order.length === 0) return undefined;
   const blocks: TraceBlock[] = [];
@@ -63,6 +64,9 @@ function buildTrace(
     if (key.startsWith("r:")) {
       const text = reasoningMap.get(key.slice(2)) ?? "";
       if (text.trim()) blocks.push({ kind: "reasoning", text });
+    } else if (key.startsWith("g:")) {
+      const g = goalMap.get(key.slice(2));
+      if (g) blocks.push({ kind: "goal", objective: g.objective, operation: g.operation });
     } else {
       const t = toolMap.get(key.slice(2));
       if (t) blocks.push({ kind: "tool", name: t.name, args: t.args, result: t.result, isError: t.isError });
@@ -449,10 +453,20 @@ export class ChatPanel {
       const traceOrder: string[] = [];
       const reasoningMap = new Map<string, string>();
       const toolMap = new Map<string, { name: string; args: string; result?: string; isError?: boolean }>();
+      const goalMap = new Map<string, { objective: string; operation: string }>();
       // 已收到权威完整块（block-end）的键：后续增量碎片不再累加，避免双写
       const sealedKeys = new Set<string>();
       const recordTrace = (msg: ProgressMessage) => {
-        if (msg.kind === "reasoning") {
+        if (msg.kind === "goal") {
+          if (!goalMap.has(msg.id)) {
+            goalMap.set(msg.id, { objective: msg.objective, operation: msg.operation });
+            traceOrder.push(`g:${msg.id}`);
+          } else {
+            const g = goalMap.get(msg.id)!;
+            g.objective = msg.objective;
+            g.operation = msg.operation;
+          }
+        } else if (msg.kind === "reasoning") {
           if (sealedKeys.has(msg.key)) return;
           if (!reasoningMap.has(msg.key)) {
             reasoningMap.set(msg.key, "");
@@ -561,7 +575,7 @@ export class ChatPanel {
         role: "assistant",
         content,
         ts: Date.now(),
-        trace: buildTrace(traceOrder, reasoningMap, toolMap),
+        trace: buildTrace(traceOrder, reasoningMap, toolMap, goalMap),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

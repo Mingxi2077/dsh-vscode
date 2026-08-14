@@ -35,6 +35,77 @@
   margin: 6px 0;
 }
 
+/* ---------- 目标块（goals） ---------- */
+
+.live-goal {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--code-bg);
+  font-size: 0.9em;
+}
+
+.live-goal.is-done {
+  border-left-color: var(--success, #2ea043);
+  opacity: 0.85;
+}
+
+.live-goal-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-goal-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.live-goal.is-done .live-goal-badge {
+  color: var(--success, #2ea043);
+}
+
+.live-goal-objective {
+  color: var(--fg);
+  word-break: break-word;
+}
+
+.msg-trace-goal {
+  margin: 6px 0;
+  padding: 4px 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--assistant-bg);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msg-trace-goal.is-done {
+  border-left-color: var(--success, #2ea043);
+  opacity: 0.85;
+}
+
+.msg-trace-goal-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.msg-trace-goal.is-done .msg-trace-goal-badge {
+  color: var(--success, #2ea043);
+}
+
+.msg-trace-goal-objective {
+  color: var(--fg);
+  word-break: break-word;
+}
+
 .msg-trace-reasoning summary {
   cursor: pointer;
   color: var(--muted);

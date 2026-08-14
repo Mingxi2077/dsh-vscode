@@ -24,7 +24,8 @@
     reasoning: new Map(), // 块索引 → 思考文本
     texts: new Map(), // 块索引 → 文本草稿
     tools: new Map(), // callId → {name,args,status,result,isError}
-    order: [], // 展示顺序：["reasoning","text","tool:<callId>"]
+    goals: new Map(), // goalId → {objective, operation}
+    order: [], // 展示顺序：["reasoning","text","tool:<callId>","goal:<id>"]
     sealed: new Set(), // 已收到权威完整块（block-end）的键，后续增量不再累加
   };
 
@@ -147,7 +148,28 @@
     details.appendChild(summary);
 
     for (const b of blocks) {
-      if (b.kind === "reasoning") {
+      if (b.kind === "goal") {
+        const badge = {
+          create: "🎯 已创建",
+          update: "✏️ 已更新",
+          edit: "✏️ 已更新",
+          pause: "⏸ 已暂停",
+          resume: "▶️ 已恢复",
+          complete: "✅ 已完成",
+          blocked: "🚧 受阻",
+        }[b.operation] || b.operation;
+        const goal = document.createElement("div");
+        goal.className = "msg-trace-goal" + (b.operation === "complete" ? " is-done" : "");
+        const badgeEl = document.createElement("span");
+        badgeEl.className = "msg-trace-goal-badge";
+        badgeEl.textContent = badge;
+        const obj = document.createElement("span");
+        obj.className = "msg-trace-goal-objective";
+        obj.textContent = b.objective;
+        goal.appendChild(badgeEl);
+        goal.appendChild(obj);
+        details.appendChild(goal);
+      } else if (b.kind === "reasoning") {
         const rd = document.createElement("details");
         rd.className = "msg-trace-reasoning";
         rd.open = false;
@@ -238,6 +260,7 @@
     live.reasoning.clear();
     live.texts.clear();
     live.tools.clear();
+    live.goals.clear();
     live.order = [];
     live.sealed.clear();
   }
@@ -262,6 +285,12 @@
         live.step = msg.step;
         live.turn = msg.turn;
         break;
+      case "goal": {
+        // DSH 目标状态：同一 goal 合并为一个卡片，操作徽标随最新状态变化
+        if (!live.goals.has(msg.id)) live.order.push("goal:" + msg.id);
+        live.goals.set(msg.id, { objective: msg.objective, operation: msg.operation });
+        break;
+      }
       case "block": {
         // 权威完整块（assistant/chunk block-end）：替换内容并封存键，防增量双写
         if (msg.blockType === "reasoning" && msg.text) {
@@ -354,7 +383,33 @@
     el.appendChild(header);
 
     for (const key of live.order) {
-      if (key.startsWith("reasoning:")) {
+      if (key.startsWith("goal:")) {
+        const g = live.goals.get(key.slice(5));
+        if (!g) continue;
+        const badge = {
+          create: "🎯 目标已创建",
+          update: "✏️ 目标已更新",
+          edit: "✏️ 目标已更新",
+          pause: "⏸ 目标已暂停",
+          resume: "▶️ 目标已恢复",
+          complete: "✅ 目标已完成",
+          blocked: "🚧 目标受阻",
+        }[g.operation] || ("🔄 " + g.operation);
+        const card = document.createElement("div");
+        card.className = "live-goal" + (g.operation === "complete" ? " is-done" : "");
+        const row = document.createElement("div");
+        row.className = "live-goal-row";
+        const badgeEl = document.createElement("span");
+        badgeEl.className = "live-goal-badge";
+        badgeEl.textContent = badge;
+        const obj = document.createElement("span");
+        obj.className = "live-goal-objective";
+        obj.textContent = g.objective;
+        row.appendChild(badgeEl);
+        row.appendChild(obj);
+        card.appendChild(row);
+        el.appendChild(card);
+      } else if (key.startsWith("reasoning:")) {
         const k = key.slice("reasoning:".length);
         const text = live.reasoning.get(k) || "";
         const details = document.createElement("details");

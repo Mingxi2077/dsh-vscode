@@ -14,7 +14,8 @@ export type ProgressMessage =
   | { kind: "usage"; input: number; output: number; cacheRead: number; reasoning: number; model: string; provider: string }
   | { kind: "done"; turn: number; reason: string }
   | { kind: "title"; title: string }
-  | { kind: "block"; key: string; blockType: "reasoning" | "text" | "tool-call"; text?: string; name?: string; args?: string; callId?: string };
+  | { kind: "block"; key: string; blockType: "reasoning" | "text" | "tool-call"; text?: string; name?: string; args?: string; callId?: string }
+  | { kind: "goal"; id: string; operation: string; objective: string; phase: string };
 
 export interface AssistantBlock {
   type: "reasoning" | "text" | "tool-call";
@@ -200,6 +201,20 @@ export class SessionTracer {
         const title = String(data.title ?? "").trim();
         if (!title) return undefined;
         return { kind: "title", title };
+      }
+      case "goal/change": {
+        // DSH 目标状态变化（create/update/pause/resume/complete/blocked）
+        const goal = data.goal ?? {};
+        const objective = String(goal.objective ?? "").trim();
+        const id = String(goal.id ?? "");
+        if (!id) return undefined;
+        return {
+          kind: "goal",
+          id,
+          operation: String(data.operation ?? "update"),
+          objective: objective || "（无目标描述）",
+          phase: String(goal.phase ?? ""),
+        };
       }
       case "assistant/chunk": {
         // 流式块事件：只消费 block-end（权威完整块），delta 碎片稀疏且与
