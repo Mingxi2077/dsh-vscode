@@ -13,3 +13,4 @@ build.sh
 dist/**
 *.vsix
 *.txt
+TESTING.md
