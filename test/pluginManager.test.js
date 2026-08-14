@@ -103,6 +103,8 @@ test("installSourceKind：识别各种安装来源", () => {
   assert.equal(installSourceKind("dsh-plugin-doctor"), "npm");
   assert.equal(installSourceKind("@scope/pkg"), "npm");
   assert.equal(installSourceKind("github:owner/repo"), "github");
+  assert.equal(installSourceKind("owner/repo"), "github", "owner/repo 短名应识别为 github");
+  assert.equal(installSourceKind("dsh-external/dsh-artifact"), "github", "dsh-external/dsh-artifact 应识别为 github");
   assert.equal(installSourceKind("git+https://github.com/a/b.git"), "git-url");
   assert.equal(installSourceKind("git@github.com:a/b.git"), "git-url");
   assert.equal(installSourceKind("https://github.com/a/b.git"), "git-url");

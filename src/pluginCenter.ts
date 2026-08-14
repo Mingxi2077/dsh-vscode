@@ -4,6 +4,7 @@ import {
   FEATURED_PLUGINS,
   PluginInfo,
   InstalledPlugin,
+  PluginCommandResult,
   readInstalledPlugins,
   runPluginCommand,
   featuredPlugin,
@@ -189,10 +190,23 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
     { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", finalSource) },
     async () => runPluginCommand(cli, "add", finalSource)
   );
-  if (progress.ok) {
-    void vscode.window.showInformationMessage(localizePluginResult(finalSource, progress));
+  await notifyPluginResult(cli, finalSource, progress);
+}
+
+/** 展示插件操作结果：成功时带「查看插件中心」按钮（带按钮的通知不会自动消失，避免
+ * 被 withProgress 的进度通知覆盖导致用户看不到结果）；失败弹错误通知。 */
+async function notifyPluginResult(cli: ResolvedCli, pkg: string, res: PluginCommandResult): Promise<void> {
+  const text = localizePluginResult(pkg, res);
+  if (res.ok) {
+    const pick = await vscode.window.showInformationMessage(
+      text,
+      t("查看插件中心", "Open Plugin Center")
+    );
+    if (pick === t("查看插件中心", "Open Plugin Center")) {
+      await showPluginBrowser(cli);
+    }
   } else {
-    void vscode.window.showErrorMessage(localizePluginResult(finalSource, progress));
+    void vscode.window.showErrorMessage(text);
   }
 }
 
@@ -258,11 +272,7 @@ async function installPlugin(cli: ResolvedCli, packageName: string): Promise<voi
     { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", packageName) },
     async () => runPluginCommand(cli, "add", packageName)
   );
-  if (progress.ok) {
-    void vscode.window.showInformationMessage(localizePluginResult(packageName, progress));
-  } else {
-    void vscode.window.showErrorMessage(localizePluginResult(packageName, progress));
-  }
+  await notifyPluginResult(cli, packageName, progress);
 }
 
 async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<void> {
@@ -279,11 +289,7 @@ async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<v
     { location: vscode.ProgressLocation.Notification, title: t("正在卸载 {0}…", "Uninstalling {0}…").replace("{0}", packageName) },
     async () => runPluginCommand(cli, "rm", packageName)
   );
-  if (progress.ok) {
-    void vscode.window.showInformationMessage(localizePluginResult(packageName, progress));
-  } else {
-    void vscode.window.showErrorMessage(localizePluginResult(packageName, progress));
-  }
+  await notifyPluginResult(cli, packageName, progress);
 }
 
 /** 供"检查环境"输出插件状态。 */

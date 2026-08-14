@@ -182,7 +182,7 @@ export function analyzePluginError(stdout: string, stderr: string): PluginErrorA
   return { kind: "generic", lines: cap(errLines.length ? errLines : fallback, 8) };
 }
 
-/** 识别插件安装来源类型（npm 包名 / github: 短名 / git URL / tarball URL / 本地路径）。 */
+/** 识别插件安装来源类型（npm 包名 / github: 短名 / owner/repo 短名 / git URL / tarball URL / 本地路径）。 */
 export function installSourceKind(input: string): "npm" | "github" | "git-url" | "url" | "path" {
   const s = input.trim();
   if (!s) return "npm";
@@ -190,6 +190,8 @@ export function installSourceKind(input: string): "npm" | "github" | "git-url" |
   if (s.startsWith("git+") || s.startsWith("git:") || /^[\w.-]+@[\w.-]+:/.test(s)) return "git-url";
   if (/^https?:\/\//.test(s)) return s.endsWith(".git") ? "git-url" : "url";
   if (/^[./\\]|^[A-Za-z]:[\\/]/.test(s)) return "path";
+  // owner/repo 短名（npm 包名不允许裸斜杠；scoped 包以 @ 开头，这里排除）
+  if (/^[^@][\w.-]+\/[\w.-]+$/.test(s)) return "github";
   return "npm";
 }
 
