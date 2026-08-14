@@ -195,21 +195,21 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
     { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", finalSource) },
     async () => runPluginCommand(cli, "add", finalSource)
   );
-  await notifyPluginResult(cli, finalSource, progress);
+  notifyPluginResult(cli, finalSource, progress);
 }
 
-/** 展示插件操作结果：成功时带「查看插件中心」按钮（带按钮的通知不会自动消失，避免
- * 被 withProgress 的进度通知覆盖导致用户看不到结果）；失败弹错误通知。 */
-async function notifyPluginResult(cli: ResolvedCli, pkg: string, res: PluginCommandResult): Promise<void> {
+/** 展示插件操作结果。可靠性策略：
+ * 1) 状态栏消息（12s）——不依赖通知系统，必定可见；
+ * 2) 成功弹带「查看插件中心」按钮的通知（带按钮不自动消失），失败弹错误通知。 */
+function notifyPluginResult(cli: ResolvedCli, pkg: string, res: PluginCommandResult): void {
   const text = localizePluginResult(pkg, res);
+  vscode.window.setStatusBarMessage(text, 12000);
   if (res.ok) {
-    const pick = await vscode.window.showInformationMessage(
-      text,
-      t("查看插件中心", "Open Plugin Center")
-    );
-    if (pick === t("查看插件中心", "Open Plugin Center")) {
-      await showPluginBrowser(cli);
-    }
+    void vscode.window.showInformationMessage(text, t("查看插件中心", "Open Plugin Center")).then((pick) => {
+      if (pick === t("查看插件中心", "Open Plugin Center")) {
+        void showPluginBrowser(cli);
+      }
+    });
   } else {
     void vscode.window.showErrorMessage(text);
   }
@@ -277,7 +277,7 @@ async function installPlugin(cli: ResolvedCli, packageName: string): Promise<voi
     { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", packageName) },
     async () => runPluginCommand(cli, "add", packageName)
   );
-  await notifyPluginResult(cli, packageName, progress);
+  notifyPluginResult(cli, packageName, progress);
 }
 
 async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<void> {
@@ -294,7 +294,7 @@ async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<v
     { location: vscode.ProgressLocation.Notification, title: t("正在卸载 {0}…", "Uninstalling {0}…").replace("{0}", packageName) },
     async () => runPluginCommand(cli, "rm", packageName)
   );
-  await notifyPluginResult(cli, packageName, progress);
+  notifyPluginResult(cli, packageName, progress);
 }
 
 /** 供"检查环境"输出插件状态。 */
