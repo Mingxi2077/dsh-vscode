@@ -54,14 +54,14 @@ function fmtNum(n: number): string {
 /** 把累积的思维链轨迹组装成有序的 TraceBlock 列表（无内容时返回 undefined）。 */
 function buildTrace(
   order: string[],
-  reasoningMap: Map<number, string>,
+  reasoningMap: Map<string, string>,
   toolMap: Map<string, { name: string; args: string; result?: string; isError?: boolean }>
 ): TraceBlock[] | undefined {
   if (order.length === 0) return undefined;
   const blocks: TraceBlock[] = [];
   for (const key of order) {
     if (key.startsWith("r:")) {
-      const text = reasoningMap.get(Number(key.slice(2))) ?? "";
+      const text = reasoningMap.get(key.slice(2)) ?? "";
       if (text.trim()) blocks.push({ kind: "reasoning", text });
     } else {
       const t = toolMap.get(key.slice(2));
@@ -442,16 +442,16 @@ export class ChatPanel {
       let tracerDone: Promise<void> = Promise.resolve();
       // 思维链轨迹累积（保留到回答里，可折叠展示）
       const traceOrder: string[] = [];
-      const reasoningMap = new Map<number, string>();
+      const reasoningMap = new Map<string, string>();
       const toolMap = new Map<string, { name: string; args: string; result?: string; isError?: boolean }>();
       const recordTrace = (msg: ProgressMessage) => {
         if (msg.kind === "reasoning") {
-          if (!reasoningMap.has(msg.index)) {
-            reasoningMap.set(msg.index, "");
-            traceOrder.push(`r:${msg.index}`);
+          if (!reasoningMap.has(msg.key)) {
+            reasoningMap.set(msg.key, "");
+            traceOrder.push(`r:${msg.key}`);
           }
-          // reasoning-chunks 是增量碎片，累加而非覆盖
-          reasoningMap.set(msg.index, (reasoningMap.get(msg.index) ?? "") + msg.text);
+          // 同 (turn,step,index) 内若分多批则累加；跨 step 是不同 key，各自成段
+          reasoningMap.set(msg.key, (reasoningMap.get(msg.key) ?? "") + msg.text);
         } else if (msg.kind === "tool") {
           if (!toolMap.has(msg.callId)) {
             toolMap.set(msg.callId, { name: msg.name, args: msg.args });

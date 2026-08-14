@@ -9,6 +9,15 @@ export function refreshSidebarStatus(): void {
   emitter.fire(undefined);
 }
 
+/** 当前运行的扩展版本号。 */
+function currentVersion(): string {
+  try {
+    return vscode.extensions.getExtension("mingxi2077.dsh-harness-vscode")?.packageJSON.version ?? "未知";
+  } catch {
+    return "未知";
+  }
+}
+
 class StatusItem extends vscode.TreeItem {
   constructor(
     label: string,
@@ -52,6 +61,7 @@ class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
     );
     items.push(new StatusItem(`沙箱：${mode}`, { icon: "shield" }));
     items.push(new StatusItem(mem?.exists() ? "记忆：已记录" : "记忆：空", { icon: "note" }));
+    items.push(new StatusItem(`扩展：v${currentVersion()}`, { icon: "versions" }));
     items.push(new StatusItem("", {}));
 
     items.push(new StatusItem("打开对话", { command: "dsh-harness-vscode.openChat", icon: "comment-discussion" }));

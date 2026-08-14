@@ -273,23 +273,25 @@
         break;
       }
       case "reasoning":
-        if (!live.reasoning.has(msg.index)) live.order.push("reasoning:" + msg.index);
-        live.reasoning.set(msg.index, msg.text);
+        if (!live.reasoning.has(msg.key)) live.order.push("reasoning:" + msg.key);
+        live.reasoning.set(msg.key, msg.text);
         break;
       case "text":
-        if (!live.texts.has(msg.index)) live.order.push("text:" + msg.index);
-        live.texts.set(msg.index, msg.text);
+        if (!live.texts.has(msg.key)) live.order.push("text:" + msg.key);
+        live.texts.set(msg.key, msg.text);
         break;
       case "assistant": {
-        // 完整快照：权威替换各块
+        // 完整快照：权威替换各块（用独立 snap- 前缀键，避免与 chunk 键冲突）
         const blocks = msg.blocks || [];
         blocks.forEach((b, i) => {
           if (b.type === "reasoning") {
-            if (!live.reasoning.has(i)) live.order.push("reasoning:" + i);
-            live.reasoning.set(i, b.text || "");
+            const k = "snap-" + i;
+            if (!live.reasoning.has(k)) live.order.push("reasoning:" + k);
+            live.reasoning.set(k, b.text || "");
           } else if (b.type === "text") {
-            if (!live.texts.has(i)) live.order.push("text:" + i);
-            live.texts.set(i, b.text || "");
+            const k = "snap-" + i;
+            if (!live.texts.has(k)) live.order.push("text:" + k);
+            live.texts.set(k, b.text || "");
           } else if (b.type === "tool-call") {
             const id = "snap-" + i;
             if (!live.tools.has(id)) live.order.push("tool:" + id);
@@ -314,8 +316,8 @@
 
     for (const key of live.order) {
       if (key.startsWith("reasoning:")) {
-        const idx = Number(key.slice(10));
-        const text = live.reasoning.get(idx) || "";
+        const k = key.slice("reasoning:".length);
+        const text = live.reasoning.get(k) || "";
         const details = document.createElement("details");
         details.className = "live-reasoning";
         details.open = true;
@@ -327,8 +329,8 @@
         details.appendChild(pre);
         el.appendChild(details);
       } else if (key.startsWith("text:")) {
-        const idx = Number(key.slice(5));
-        const text = live.texts.get(idx) || "";
+        const k = key.slice("text:".length);
+        const text = live.texts.get(k) || "";
         const div = document.createElement("div");
         div.className = "live-text";
         div.textContent = text || "…";

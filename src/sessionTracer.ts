@@ -7,8 +7,8 @@ export type ProgressMessage =
   | { kind: "turn"; turn: number }
   | { kind: "tool"; callId: string; name: string; args: string }
   | { kind: "tool-result"; callId: string; isError: boolean; summary: string }
-  | { kind: "reasoning"; index: number; text: string }
-  | { kind: "text"; index: number; text: string }
+  | { kind: "reasoning"; key: string; index: number; text: string }
+  | { kind: "text"; key: string; index: number; text: string }
   | { kind: "assistant"; blocks: AssistantBlock[] }
   | { kind: "usage"; input: number; output: number; cacheRead: number; reasoning: number; model: string; provider: string }
   | { kind: "done"; turn: number; reason: string };
@@ -205,11 +205,13 @@ export class SessionTracer {
       }
       case "reasoning-chunks": {
         const texts: string[] = Array.isArray(data.texts) ? data.texts : [];
-        return { kind: "reasoning", index: Number(data.index ?? 0), text: texts.join("") };
+        const key = `${data.turn ?? 0}:${data.step ?? 0}:${data.index ?? 0}`;
+        return { kind: "reasoning", key, index: Number(data.index ?? 0), text: texts.join("") };
       }
       case "text-chunks": {
         const texts: string[] = Array.isArray(data.texts) ? data.texts : [];
-        return { kind: "text", index: Number(data.index ?? 0), text: texts.join("") };
+        const key = `${data.turn ?? 0}:${data.step ?? 0}:${data.index ?? 0}`;
+        return { kind: "text", key, index: Number(data.index ?? 0), text: texts.join("") };
       }
       case "tool-call-chunks": {
         const args: string[] = Array.isArray(data.args) ? data.args : [];
