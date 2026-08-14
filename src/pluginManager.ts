@@ -18,39 +18,43 @@ export interface PluginInfo {
   displayName: string;
   /** 中文描述。 */
   description: string;
+  /** 英文描述（i18n 展示用）。 */
+  descriptionEn?: string;
   /** 分类（工具/搜索/可视化/记忆/工作流…）。 */
   category: string;
+  /** 英文分类。 */
+  categoryEn?: string;
   /** 是否为 bundle 插件（声明 dsh.bundle，安装即激活）。 */
   bundle: boolean;
 }
 
 /** 内置精选插件清单（headless + VS Code 场景相关，来自 awesome-dsh-plugin 社区精选）。 */
 export const FEATURED_PLUGINS: PluginInfo[] = [
-  { packageName: "dsh-toolkit", displayName: "DSH Toolkit", description: "零依赖工具包：time / encoding / json / calculator / csv / regex / markdown / diff / stat / schema 十件套一键安装", category: "工具", bundle: true },
-  { packageName: "dsh-tool-time", displayName: "Time 工具", description: "严格 ISO 8601 解析、IANA 时区转换、UTC 日历运算", category: "工具", bundle: true },
-  { packageName: "dsh-tool-json", displayName: "JSON 工具", description: "JMESPath 子集 JSON 查询", category: "工具", bundle: true },
-  { packageName: "dsh-tool-encoding", displayName: "Encoding 工具", description: "base64/url/hex 编解码、常用哈希、UUID 生成", category: "工具", bundle: true },
-  { packageName: "dsh-tool-calculator", displayName: "Calculator 工具", description: "安全的数学表达式求值器，零依赖递归下降解析器", category: "工具", bundle: true },
-  { packageName: "dsh-tool-diff", displayName: "Diff 工具", description: "文本/JSON/CSV/Markdown 结构化比较与 unified diff", category: "工具", bundle: true },
-  { packageName: "dsh-tool-markdown", displayName: "Markdown 工具", description: "HTML↔Markdown 转换、GFM 表格规范化、目录生成", category: "工具", bundle: true },
-  { packageName: "dsh-tool-regex", displayName: "Regex 工具", description: "正则测试/提取/安全替换/静态解释（不执行代码）", category: "工具", bundle: true },
-  { packageName: "dsh-tool-csv", displayName: "CSV 工具", description: "CSV 解析/查询/统计/转换（RFC 4180）", category: "工具", bundle: true },
-  { packageName: "dsh-tool-schema", displayName: "Schema 工具", description: "JSON Schema 验证：validate/paths/explain/normalize", category: "工具", bundle: true },
-  { packageName: "dsh-tool-stat", displayName: "Stat 工具", description: "描述统计/百分位数/频数分布/相关性", category: "工具", bundle: true },
-  { packageName: "dsh-code-intel", displayName: "Code Intel", description: "用 Tree-sitter 建立工作区符号索引，提供词法或可选 embedding 辅助的代码检索", category: "代码", bundle: true },
-  { packageName: "dsh-plugin-git-workflow", displayName: "Git Workflow", description: "一等公民的 Git 工具：status / diff / log / commit / branch，零 shell 调用杜绝注入", category: "代码", bundle: true },
-  { packageName: "dsh-custom-tool", displayName: "Custom Tool", description: "用 Monaco 编辑器创建和管理沙箱化的自定义 JavaScript 工具", category: "工具", bundle: true },
-  { packageName: "dsh-subagent-tools", displayName: "Subagent Tools", description: "子代理委派的按调用覆盖：model/provider/persona/toolFilter、@preset 引用", category: "工作流", bundle: true },
-  { packageName: "dsh-bash-terminal", displayName: "Bash Terminal", description: "一个 shell 工具：Windows 上统一执行 PowerShell / Git Bash / WSL，外加交互式 PTY 终端", category: "工具", bundle: true },
-  { packageName: "dsh-docker", displayName: "Docker 控制", description: "类型安全、带护栏的容器控制：ps/logs/inspect/exec/start/stop 与 compose，破坏性操作需审批", category: "集成", bundle: true },
-  { packageName: "dsh-backup", displayName: "DSH Backup", description: "一键备份 DSH 用户数据：/backup 命令、定时自动备份、sha256 校验与自动轮换", category: "运维", bundle: true },
-  { packageName: "dsh-skillport", displayName: "Skillport", description: "把已有的 Agent Skills（SKILL.md）技能库带进 DSH：扫描 Claude/Codex/Cursor 技能目录、按需加载", category: "技能", bundle: true },
-  { packageName: "dsh-md-preview", displayName: "MD Preview", description: "把 Markdown 渲染为自包含独立 HTML 页面，headless 下也有 md_html_render 工具", category: "工具", bundle: true },
-  { packageName: "dsh-undo-plugin", displayName: "Undo/回退", description: "配置变更自动存档，一键撤销/恢复/回退到任意版本", category: "运维", bundle: true },
-  { packageName: "dsh-session-audit", displayName: "Session Audit", description: "会话执行分析：步骤、工具调用、失败、重复动作、token 用量与验证信号，输出报告", category: "分析", bundle: true },
-  { packageName: "dsh-excel-chat", displayName: "Excel Chat", description: "对话完成 Excel 工作：建表、编辑、修复公式、图表校验，每次编辑后自动体检公式", category: "办公", bundle: true },
-  { packageName: "dsh-voice", displayName: "Voice 语音", description: "语音输入、语音输出：口述转写为用户消息，agent 朗读回复，本地优先", category: "办公", bundle: true },
-  { packageName: "dsh-remote", displayName: "Remote 多机", description: "管理多台 SSH 主机，远程工作区镜像成本地文件夹并用 rw_* 工具操作", category: "集成", bundle: true },
+  { packageName: "dsh-toolkit", displayName: "DSH Toolkit", description: "零依赖工具包：time / encoding / json / calculator / csv / regex / markdown / diff / stat / schema 十件套一键安装", descriptionEn: "Zero-dependency tool pack: time / encoding / json / calculator / csv / regex / markdown / diff / stat / schema, one install", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-time", displayName: "Time", description: "严格 ISO 8601 解析、IANA 时区转换、UTC 日历运算", descriptionEn: "Strict ISO 8601 parsing, IANA timezone conversion, UTC calendar math", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-json", displayName: "JSON", description: "JMESPath 子集 JSON 查询", descriptionEn: "JMESPath-subset JSON querying", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-encoding", displayName: "Encoding", description: "base64/url/hex 编解码、常用哈希、UUID 生成", descriptionEn: "base64/url/hex codecs, common hashes, UUID generation", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-calculator", displayName: "Calculator", description: "安全的数学表达式求值器，零依赖递归下降解析器", descriptionEn: "Safe math expression evaluator, zero-dep recursive-descent parser", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-diff", displayName: "Diff", description: "文本/JSON/CSV/Markdown 结构化比较与 unified diff", descriptionEn: "Structured text/JSON/CSV/Markdown comparison & unified diff", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-markdown", displayName: "Markdown", description: "HTML↔Markdown 转换、GFM 表格规范化、目录生成", descriptionEn: "HTML↔Markdown conversion, GFM table normalization, TOC generation", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-regex", displayName: "Regex", description: "正则测试/提取/安全替换/静态解释（不执行代码）", descriptionEn: "Regex test/extract/safe-replace/static explain (no code execution)", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-csv", displayName: "CSV", description: "CSV 解析/查询/统计/转换（RFC 4180）", descriptionEn: "CSV parse/query/stats/convert (RFC 4180)", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-schema", displayName: "Schema", description: "JSON Schema 验证：validate/paths/explain/normalize", descriptionEn: "JSON Schema validation: validate/paths/explain/normalize", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-tool-stat", displayName: "Stat", description: "描述统计/百分位数/频数分布/相关性", descriptionEn: "Descriptive stats / percentiles / frequency / correlation", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-code-intel", displayName: "Code Intel", description: "用 Tree-sitter 建立工作区符号索引，提供词法或可选 embedding 辅助的代码检索", descriptionEn: "Tree-sitter workspace symbol index with lexical or optional embedding-assisted code search", category: "代码", categoryEn: "Code", bundle: true },
+  { packageName: "dsh-plugin-git-workflow", displayName: "Git Workflow", description: "一等公民的 Git 工具：status / diff / log / commit / branch，零 shell 调用杜绝注入", descriptionEn: "First-class Git tools: status / diff / log / commit / branch, zero shell calls, injection-proof", category: "代码", categoryEn: "Code", bundle: true },
+  { packageName: "dsh-custom-tool", displayName: "Custom Tool", description: "用 Monaco 编辑器创建和管理沙箱化的自定义 JavaScript 工具", descriptionEn: "Create and manage sandboxed custom JavaScript tools with the Monaco editor", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-subagent-tools", displayName: "Subagent Tools", description: "子代理委派的按调用覆盖：model/provider/persona/toolFilter、@preset 引用", descriptionEn: "Per-call overrides for subagent delegation: model/provider/persona/toolFilter, @preset refs", category: "工作流", categoryEn: "Workflow", bundle: true },
+  { packageName: "dsh-bash-terminal", displayName: "Bash Terminal", description: "一个 shell 工具：Windows 上统一执行 PowerShell / Git Bash / WSL，外加交互式 PTY 终端", descriptionEn: "One shell tool: runs PowerShell / Git Bash / WSL uniformly on Windows, plus an interactive PTY terminal", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-docker", displayName: "Docker", description: "类型安全、带护栏的容器控制：ps/logs/inspect/exec/start/stop 与 compose，破坏性操作需审批", descriptionEn: "Type-safe guarded container control: ps/logs/inspect/exec/start/stop & compose; destructive ops need approval", category: "集成", categoryEn: "Integration", bundle: true },
+  { packageName: "dsh-backup", displayName: "DSH Backup", description: "一键备份 DSH 用户数据：/backup 命令、定时自动备份、sha256 校验与自动轮换", descriptionEn: "One-click DSH data backup: /backup command, scheduled auto-backup, sha256 checks, auto rotation", category: "运维", categoryEn: "Ops", bundle: true },
+  { packageName: "dsh-skillport", displayName: "Skillport", description: "把已有的 Agent Skills（SKILL.md）技能库带进 DSH：扫描 Claude/Codex/Cursor 技能目录、按需加载", descriptionEn: "Bring existing Agent Skills (SKILL.md) into DSH: scan Claude/Codex/Cursor skill dirs, load on demand", category: "技能", categoryEn: "Skills", bundle: true },
+  { packageName: "dsh-md-preview", displayName: "MD Preview", description: "把 Markdown 渲染为自包含独立 HTML 页面，headless 下也有 md_html_render 工具", descriptionEn: "Render Markdown as self-contained HTML; md_html_render tool works in headless too", category: "工具", categoryEn: "Tools", bundle: true },
+  { packageName: "dsh-undo-plugin", displayName: "Undo/Rollback", description: "配置变更自动存档，一键撤销/恢复/回退到任意版本", descriptionEn: "Auto-archive config changes; one-click undo/restore/rollback to any version", category: "运维", categoryEn: "Ops", bundle: true },
+  { packageName: "dsh-session-audit", displayName: "Session Audit", description: "会话执行分析：步骤、工具调用、失败、重复动作、token 用量与验证信号，输出报告", descriptionEn: "Session execution analysis: steps, tool calls, failures, repeats, token usage & verification signals", category: "分析", categoryEn: "Analysis", bundle: true },
+  { packageName: "dsh-excel-chat", displayName: "Excel Chat", description: "对话完成 Excel 工作：建表、编辑、修复公式、图表校验，每次编辑后自动体检公式", descriptionEn: "Do Excel work by chat: create/edit sheets, fix formulas, chart validation, auto formula check after each edit", category: "办公", categoryEn: "Office", bundle: true },
+  { packageName: "dsh-voice", displayName: "Voice", description: "语音输入、语音输出：口述转写为用户消息，agent 朗读回复，本地优先", descriptionEn: "Voice in/out: transcribe speech to messages, agent speaks replies, local-first", category: "办公", categoryEn: "Office", bundle: true },
+  { packageName: "dsh-remote", displayName: "Remote", description: "管理多台 SSH 主机，远程工作区镜像成本地文件夹并用 rw_* 工具操作", descriptionEn: "Manage SSH hosts; mirror remote workspaces as local folders with rw_* tools", category: "集成", categoryEn: "Integration", bundle: true },
   { packageName: "dsh-net-proxy", displayName: "Net Proxy", description: "让 agent 的网络请求走本机 HTTP/CONNECT/SOCKS5 代理", category: "网络", bundle: true },
 ];
 
@@ -122,8 +126,8 @@ export function installSourceKind(input: string): "npm" | "github" | "git-url" |
 }
 
 /** 从 pnpm 错误输出中提取需要允许 build 脚本的包名（onlyBuiltDependencies）。
- * pnpm 可能把错误打到 stdout 或 stderr，两者都查。 */
-function extractBuiltAllowNames(output: string): string[] {
+ * pnpm 可能把错误打到 stdout 或 stderr，两者都查。导出便于测试。 */
+export function extractBuiltAllowNames(output: string): string[] {
   const names: string[] = [];
   // 格式1: The git-hosted package "@scope/pkg@1.0.0" needs to execute build scripts...
   const m1 = output.match(/"((?:@[\w.-]+\/)?[\w.-]+)@[\d.]+" needs to execute build scripts/);
@@ -134,6 +138,7 @@ function extractBuiltAllowNames(output: string): string[] {
   // 格式3: "Add the package to onlyBuiltDependencies" 后面最近的包名
   const m3 = output.match(/Add the package to "onlyBuiltDependencies"[^\n]*?[\n]?onlyBuiltDependencies:\s*\n\s*-\s*["']((?:@[\w.-]+\/)?[\w.-]+)["']/);
   if (m3) names.push(m3[1]);
+  // 格式4: DSH 的 "add the exact key pnpm printed above" 措辞后无包名，退回格式1/2
   return [...new Set(names)];
 }
 
@@ -187,7 +192,7 @@ export function runPluginCommand(
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill();
-      resolve({ ok: false, message: `插件命令超时（${packageName}）` });
+      resolve({ ok: false, message: `plugin command timed out (${packageName})` });
     }, 180000);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
@@ -197,18 +202,18 @@ export function runPluginCommand(
     });
     child.on("error", (err) => {
       clearTimeout(timer);
-      resolve({ ok: false, message: `spawn 失败：${err.message}` });
+      resolve({ ok: false, message: `spawn failed: ${err.message}` });
     });
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code === 0) {
         const active = action === "add" ? isActive(packageName) : undefined;
         const detail = stdout.trim().split(/\r?\n/).filter((l) => l.includes("bundle") || l.includes("warning")).join(" ");
-        const suffix = detail ? `（${detail.slice(0, 120)}）` : "";
+        const suffix = detail ? ` (${detail.slice(0, 120)})` : "";
         resolve({
           ok: true,
           active,
-          message: action === "add" ? `已安装 ${packageName}${suffix}` : `已卸载 ${packageName}`,
+          message: action === "add" ? `installed ${packageName}${suffix}` : `removed ${packageName}`,
         });
       } else if (action === "add" && retryCount < 2 && /onlyBuiltDependencies|needs to execute build scripts|git-hosted plugins build on install/.test(stderr + "\n" + stdout)) {
         // git/URL 插件需要 build 许可：解析包名 → 加入允许列表 → 重试
@@ -220,9 +225,17 @@ export function runPluginCommand(
             return;
           }
         }
-        resolve({ ok: false, message: `安装 ${packageName} 需要 build 脚本许可但自动处理失败：${(stderr + "\n" + stdout).trim().slice(0, 200)}` });
+        resolve({
+          ok: false,
+          message:
+            `install ${packageName} needs build-script permission (onlyBuiltDependencies) but auto-handling failed: ` +
+            `could not extract the package name from the error. Try installing again, or check the DSH output panel.`,
+        });
       } else {
-        resolve({ ok: false, message: `${action === "add" ? "安装" : "卸载"} ${packageName} 失败(exit ${code}): ${stderr.trim().slice(0, 300) || stdout.trim().slice(0, 300)}` });
+        resolve({
+          ok: false,
+          message: `${action === "add" ? "install" : "remove"} ${packageName} failed (exit ${code}): ${stderr.trim().slice(0, 300) || stdout.trim().slice(0, 300)}`,
+        });
       }
     });
   });

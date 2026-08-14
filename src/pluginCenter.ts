@@ -37,14 +37,15 @@ async function showPluginBrowser(cli: ResolvedCli): Promise<void> {
 
   const pick = await vscode.window.showQuickPick(
     [
+      // 操作入口放最顶部，避免被列表淹没
+      { label: "$(cloud-download) " + t("从来源安装…", "Install from source…"), description: t("npm 包名 / GitHub 仓库 / git URL / 本地路径", "npm package / GitHub repo / git URL / local path"), action: "install-source" },
+      { label: "$(refresh) " + t("刷新列表", "Refresh"), description: t("重新读取 headless profile 已装插件", "Reload installed plugins from the headless profile"), action: "refresh" },
+      { label: "", kind: vscode.QuickPickItemKind.Separator },
       { label: t("📦 已安装插件", "📦 Installed plugins"), kind: vscode.QuickPickItemKind.Separator },
       ...installed.map((p) => makeInstalledItem(p)),
       { label: "", kind: vscode.QuickPickItemKind.Separator },
       { label: t("✨ 精选可装插件", "✨ Featured installable"), kind: vscode.QuickPickItemKind.Separator },
       ...FEATURED_PLUGINS.filter((p) => !installedNames.has(p.packageName)).map((p) => makeFeaturedItem(p)),
-      { label: "", kind: vscode.QuickPickItemKind.Separator },
-      { label: "$(cloud-download) " + t("从来源安装…", "Install from source…"), description: t("npm 包名 / GitHub 仓库 / git URL / 本地路径", "npm package / GitHub repo / git URL / local path"), action: "install-source" },
-      { label: "$(refresh) " + t("刷新列表", "Refresh"), description: t("重新读取 headless profile 已装插件", "Reload installed plugins from the headless profile"), action: "refresh" },
     ] as PluginPickItem[],
     {
       placeHolder: t("DSH 插件中心：选择插件或操作", "DSH Plugin Center: choose a plugin or action"),
@@ -81,8 +82,8 @@ function makeInstalledItem(p: InstalledPlugin): PluginPickItem {
 function makeFeaturedItem(p: PluginInfo): PluginPickItem {
   return {
     label: `⬇ ${p.displayName}`,
-    description: `[${p.category}]`,
-    detail: p.description,
+    description: `[${t(p.category, p.categoryEn ?? p.category)}]`,
+    detail: t(p.description, p.descriptionEn ?? p.description),
     packageName: p.packageName,
   };
 }
@@ -114,7 +115,7 @@ async function showPluginActions(cli: ResolvedCli, packageName: string, installe
   }
   if (action === "detail") {
     const text = feat
-      ? `**${feat.displayName}**（\`${feat.packageName}\`）\n\n${feat.description}\n\n- ${t("分类", "Category")}：${feat.category}\n- ${t("类型", "Type")}：${feat.bundle ? t("bundle（安装即激活）", "bundle (activates on install)") : t("普通依赖", "plain dependency")}\n- ${t("状态", "Status")}：${inst ? (inst.active ? t("已激活", "active") : t("已安装未激活", "installed, inactive")) : t("未安装", "not installed")}`
+      ? `**${feat.displayName}**（\`${feat.packageName}\`）\n\n${t(feat.description, feat.descriptionEn ?? feat.description)}\n\n- ${t("分类", "Category")}：${t(feat.category, feat.categoryEn ?? feat.category)}\n- ${t("类型", "Type")}：${feat.bundle ? t("bundle（安装即激活）", "bundle (activates on install)") : t("普通依赖", "plain dependency")}\n- ${t("状态", "Status")}：${inst ? (inst.active ? t("已激活", "active") : t("已安装未激活", "installed, inactive")) : t("未安装", "not installed")}`
       : `**${packageName}**\n\n- ${t("非精选插件", "not a featured plugin")}\n- ${t("状态", "Status")}：${inst ? (inst.active ? t("已激活", "active") : t("已安装未激活", "installed, inactive")) : t("未安装", "not installed")}`;
     void vscode.window.showInformationMessage(text, { modal: true });
     await showPluginActions(cli, packageName, installed);
@@ -174,12 +175,43 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
     async () => runPluginCommand(cli, "add", resolvedSource)
   );
   if (progress.ok) {
-    void vscode.window.showInformationMessage(
-      `${progress.message}${progress.active === true ? t("（已激活，重载窗口后生效）", " (activated, effective after window reload)") : t("（注意：可能未激活）", " (note: may not be activated)")}`
-    );
+    void vscode.window.showInformationMessage(localizePluginResult(resolvedSource, progress));
   } else {
-    void vscode.window.showErrorMessage(progress.message);
+    void vscode.window.showErrorMessage(localizePluginResult(resolvedSource, progress));
   }
+}
+
+/** 翻译 runPluginCommand 的英文返回消息为当前语言（成功/失败都翻译）。 */
+function localizePluginResult(pkg: string, res: { ok: boolean; message: string; active?: boolean }): string {
+  const msg = res.message;
+  // 成功
+  if (res.ok) {
+    if (msg.startsWith("installed")) {
+      return t("已安装 {0}", "Installed {0}").replace("{0}", pkg) + (res.active === true ? t("（已激活）", " (activated)") : t("（可能未激活）", " (may not be activated)"));
+    }
+    if (msg.startsWith("removed")) {
+      return t("已卸载 {0}", "Removed {0}").replace("{0}", pkg);
+    }
+    return msg;
+  }
+  // 失败
+  if (msg.startsWith("install") && msg.includes("build-script permission")) {
+    return t(
+      `安装 ${pkg} 需要 build 脚本许可但自动处理失败。请重试，或查看 DSH 输出面板。`,
+      `Installing ${pkg} needs build-script permission (onlyBuiltDependencies) but auto-handling failed. Retry, or check the DSH output panel.`
+    );
+  }
+  if (msg.startsWith("plugin command timed out")) {
+    return t(`插件命令超时：{0}`, "Plugin command timed out: {0}").replace("{0}", pkg);
+  }
+  if (msg.startsWith("spawn failed")) {
+    return t(`无法启动 dsh：{0}`, "Failed to launch dsh: {0}").replace("{0}", msg.replace("spawn failed: ", ""));
+  }
+  if (msg.startsWith("install") || msg.startsWith("remove")) {
+    // 通用失败：保留英文细节（原始错误），前缀本地化
+    return t(`插件操作失败：{0}`, "Plugin operation failed: {0}").replace("{0}", msg);
+  }
+  return msg;
 }
 
 async function installPlugin(cli: ResolvedCli, packageName: string): Promise<void> {
@@ -197,11 +229,9 @@ async function installPlugin(cli: ResolvedCli, packageName: string): Promise<voi
     async () => runPluginCommand(cli, "add", packageName)
   );
   if (progress.ok) {
-    void vscode.window.showInformationMessage(
-      `${progress.message}${progress.active === true ? t("（已激活，重载窗口后生效）", " (activated, effective after window reload)") : t("（注意：可能未激活）", " (note: may not be activated)")}`
-    );
+    void vscode.window.showInformationMessage(localizePluginResult(packageName, progress));
   } else {
-    void vscode.window.showErrorMessage(progress.message);
+    void vscode.window.showErrorMessage(localizePluginResult(packageName, progress));
   }
 }
 
@@ -220,9 +250,9 @@ async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<v
     async () => runPluginCommand(cli, "rm", packageName)
   );
   if (progress.ok) {
-    void vscode.window.showInformationMessage(`${progress.message}${t("（重载窗口后生效）", " (effective after window reload)")}`);
+    void vscode.window.showInformationMessage(localizePluginResult(packageName, progress));
   } else {
-    void vscode.window.showErrorMessage(progress.message);
+    void vscode.window.showErrorMessage(localizePluginResult(packageName, progress));
   }
 }
 

@@ -13,19 +13,19 @@ import { registerChatParticipant } from "./chatParticipant";
 import { registerSidebarView } from "./sidebar";
 import { openPluginCenter, pluginStatusSummary } from "./pluginCenter";
 import { openPresetCenter, presetStatusSummary } from "./presetCenter";
-import { t } from "./i18n";
+import { t, tf } from "./i18n";
 
 /** 检查 llm-pi-ai.providers 配置的可服务性（返回多行说明）。 */
 function checkProviderConfig(): string[] {
   const providers = readCustomProviders();
-  if (providers.length === 0) return ["未配置任何自定义/第三方提供商（内置 DeepSeek 官方可用）。"];
+  if (providers.length === 0) return [t("未配置任何自定义/第三方提供商（内置 DeepSeek 官方可用）。", "No custom/third-party providers configured (built-in DeepSeek official is available).")];
   const lines = providers.map((p) => {
     const cat = catalogProviderById(p.id);
-    const kind = cat ? "DSH 内置（catalog）" : "自定义";
-    const hasKey = p.apiKeyEnv ? `${p.apiKeyEnv}（运行时注入）` : "未声明 apiKeyEnv";
-    return `${p.displayName || p.id}（${p.id}）· ${kind} · Key: ${hasKey}`;
+    const kind = cat ? t("DSH 内置（catalog）", "DSH built-in (catalog)") : t("自定义", "custom");
+    const hasKey = p.apiKeyEnv ? `${p.apiKeyEnv}${t("（运行时注入）", " (injected at runtime)")}` : t("未声明 apiKeyEnv", "no apiKeyEnv");
+    return `${p.displayName || p.id} (${p.id}) · ${kind} · Key: ${hasKey}`;
   });
-  lines.push(`共 ${providers.length} 个提供商。模型由 DSH 目录提供，升级后自动跟随。`);
+  lines.push(tf(t("共 {0} 个提供商。模型由 DSH 目录提供，升级后自动跟随。", "{0} providers total. Models come from the DSH catalog and auto-follow upgrades."), providers.length));
   return lines;
 }
 

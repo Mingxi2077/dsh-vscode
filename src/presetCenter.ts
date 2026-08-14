@@ -93,9 +93,9 @@ async function togglePreset(preset: PresetDef, currentlyEnabled: boolean): Promi
 /** 供"检查环境"输出预设状态。 */
 export function presetStatusSummary(): string[] {
   const enabled = listEnabledPresets();
-  if (enabled.length === 0) return ["未启用任何模式预设（DSH 默认行为）"];
+  if (enabled.length === 0) return [t("未启用任何模式预设（DSH 默认行为）", "No mode presets enabled (DSH defaults)")];
   return enabled.map((id) => {
     const p = PRESETS.find((x) => x.id === id);
-    return `✅ ${p?.name ?? id}（${id}）`;
+    return `✅ ${t(p?.name ?? id, p?.enName ?? id)} (${id})`;
   });
 }
