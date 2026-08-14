@@ -5,3 +5,7 @@ out/
 .npm-cache/
 .test-tmp-*/
 dist/
+
+package-out.txt
+test-*.txt
+tsc-out.txt
