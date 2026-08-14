@@ -13,6 +13,78 @@
   text-overflow: ellipsis;
 }
 
+/* ---------- 保留的思维链轨迹（可折叠） ---------- */
+
+.msg-trace {
+  margin: 4px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: var(--code-bg);
+  font-size: 0.88em;
+}
+
+.msg-trace > summary {
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+  font-size: 12px;
+}
+
+.msg-trace-reasoning {
+  margin: 6px 0;
+}
+
+.msg-trace-reasoning summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.msg-trace-reasoning pre {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.msg-trace-tool {
+  margin: 6px 0;
+  padding: 4px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--assistant-bg);
+  border-radius: 4px;
+}
+
+.msg-trace-tool.is-error {
+  border-left-color: var(--danger);
+}
+
+.msg-trace-tool-name {
+  font-weight: 600;
+  font-family: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+.msg-trace-tool code {
+  display: block;
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 0.85em;
+  background: none;
+  padding: 0;
+}
+
+.msg-trace-tool-result {
+  margin-top: 2px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85em;
+}
+
 .live-feed {
   border-style: dashed !important;
 }

@@ -3,11 +3,18 @@ import * as path from "path";
 
 export type ChatRole = "user" | "assistant" | "system";
 
+/** 思维链轨迹块：保留回答背后的思考过程与工具调用，可折叠展示。 */
+export type TraceBlock =
+  | { kind: "reasoning"; text: string }
+  | { kind: "tool"; name: string; args: string; result?: string; isError?: boolean };
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
   ts: number;
+  /** 生成该回答时的思维链轨迹（思考 + 工具调用），可选。 */
+  trace?: TraceBlock[];
 }
 
 export interface ChatSession {

@@ -2,7 +2,7 @@ import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
 import { ResolvedCli, buildSpawnArgs, runDsh } from "./cli";
-import { ChatMessage, ChatSession, SessionStore, stableHash } from "./sessionStore";
+import { ChatMessage, ChatSession, SessionStore, stableHash, TraceBlock } from "./sessionStore";
 import { ProjectMemory } from "./memory";
 import { SessionTracer, ProgressMessage } from "./sessionTracer";
 import { handleSlashCommand, postMemory } from "./chatCommands";
@@ -49,6 +49,26 @@ const UUID = () => crypto.randomUUID();
 function fmtNum(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
+}
+
+/** 把累积的思维链轨迹组装成有序的 TraceBlock 列表（无内容时返回 undefined）。 */
+function buildTrace(
+  order: string[],
+  reasoningMap: Map<number, string>,
+  toolMap: Map<string, { name: string; args: string; result?: string; isError?: boolean }>
+): TraceBlock[] | undefined {
+  if (order.length === 0) return undefined;
+  const blocks: TraceBlock[] = [];
+  for (const key of order) {
+    if (key.startsWith("r:")) {
+      const text = reasoningMap.get(Number(key.slice(2))) ?? "";
+      if (text.trim()) blocks.push({ kind: "reasoning", text });
+    } else {
+      const t = toolMap.get(key.slice(2));
+      if (t) blocks.push({ kind: "tool", name: t.name, args: t.args, result: t.result, isError: t.isError });
+    }
+  }
+  return blocks.length > 0 ? blocks : undefined;
 }
 
 export class ChatPanel {
@@ -420,6 +440,33 @@ export class ChatPanel {
       // 实时追踪会话事件日志 → 思维链 / 工具调用进度 / 用量
       let tracer: SessionTracer | undefined;
       let tracerDone: Promise<void> = Promise.resolve();
+      // 思维链轨迹累积（保留到回答里，可折叠展示）
+      const traceOrder: string[] = [];
+      const reasoningMap = new Map<number, string>();
+      const toolMap = new Map<string, { name: string; args: string; result?: string; isError?: boolean }>();
+      const recordTrace = (msg: ProgressMessage) => {
+        if (msg.kind === "reasoning") {
+          if (!reasoningMap.has(msg.index)) {
+            reasoningMap.set(msg.index, "");
+            traceOrder.push(`r:${msg.index}`);
+          }
+          reasoningMap.set(msg.index, msg.text);
+        } else if (msg.kind === "tool") {
+          if (!toolMap.has(msg.callId)) {
+            toolMap.set(msg.callId, { name: msg.name, args: msg.args });
+            traceOrder.push(`t:${msg.callId}`);
+          } else if (msg.args) {
+            const t = toolMap.get(msg.callId)!;
+            t.args = msg.args;
+          }
+        } else if (msg.kind === "tool-result") {
+          const t = toolMap.get(msg.callId);
+          if (t) {
+            t.result = msg.summary;
+            t.isError = msg.isError;
+          }
+        }
+      };
       if (streamProgress) {
         tracer = new SessionTracer(env, Date.now(), (line) => this.log?.(line));
         tracerDone = tracer.start(
@@ -428,6 +475,7 @@ export class ChatPanel {
               this.lastUsage = msg;
               this.post({ type: "usage", ...msg, effort: this.effectiveEffort() });
             } else {
+              recordTrace(msg);
               this.post({ type: "progress", msg });
             }
           },
@@ -480,6 +528,7 @@ export class ChatPanel {
         role: "assistant",
         content,
         ts: Date.now(),
+        trace: buildTrace(traceOrder, reasoningMap, toolMap),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

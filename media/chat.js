@@ -118,8 +118,57 @@
     DSHMarkdown.linkifyFileRefs(content);
 
     el.appendChild(header);
+    if (m.trace && m.trace.length) {
+      el.appendChild(renderTrace(m.trace));
+    }
     el.appendChild(content);
     return el;
+  }
+
+  /** 把思维链轨迹渲染成可折叠区域（默认收起）。 */
+  function renderTrace(blocks) {
+    const details = document.createElement("details");
+    details.className = "msg-trace";
+    const summary = document.createElement("summary");
+    const toolCount = blocks.filter((b) => b.kind === "tool").length;
+    summary.textContent =
+      "思维链与工具调用（" + blocks.length + " 项" + (toolCount ? "，工具 " + toolCount + " 个" : "") + "）";
+    details.appendChild(summary);
+
+    for (const b of blocks) {
+      if (b.kind === "reasoning") {
+        const rd = document.createElement("details");
+        rd.className = "msg-trace-reasoning";
+        rd.open = false;
+        const rs = document.createElement("summary");
+        rs.textContent = "思考";
+        const pre = document.createElement("pre");
+        pre.textContent = b.text || "";
+        rd.appendChild(rs);
+        rd.appendChild(pre);
+        details.appendChild(rd);
+      } else if (b.kind === "tool") {
+        const card = document.createElement("div");
+        card.className = "msg-trace-tool" + (b.isError ? " is-error" : "");
+        const name = document.createElement("span");
+        name.className = "msg-trace-tool-name";
+        name.textContent = "⚙ " + (b.name || "tool");
+        card.appendChild(name);
+        if (b.args) {
+          const args = document.createElement("code");
+          args.textContent = b.args.slice(0, 200);
+          card.appendChild(args);
+        }
+        if (b.result) {
+          const res = document.createElement("div");
+          res.className = "msg-trace-tool-result";
+          res.textContent = b.result.slice(0, 200);
+          card.appendChild(res);
+        }
+        details.appendChild(card);
+      }
+    }
+    return details;
   }
 
   function fmtNum(n) {
