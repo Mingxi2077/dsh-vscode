@@ -450,7 +450,8 @@ export class ChatPanel {
             reasoningMap.set(msg.index, "");
             traceOrder.push(`r:${msg.index}`);
           }
-          reasoningMap.set(msg.index, msg.text);
+          // reasoning-chunks 是增量碎片，累加而非覆盖
+          reasoningMap.set(msg.index, (reasoningMap.get(msg.index) ?? "") + msg.text);
         } else if (msg.kind === "tool") {
           if (!toolMap.has(msg.callId)) {
             toolMap.set(msg.callId, { name: msg.name, args: msg.args });

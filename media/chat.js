@@ -57,6 +57,15 @@
     els.messages.scrollTop = els.messages.scrollHeight;
   }
 
+  /** 智能滚动：用户已在底部附近才自动跟随，往上翻历史时不打断。 */
+  function smartScrollToBottom() {
+    const el = els.messages;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distance < 48) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+
   function render() {
     els.messages.innerHTML = "";
     if (state.messages.length === 0) {
@@ -234,7 +243,7 @@
     liveEl = document.createElement("div");
     liveEl.className = "msg assistant live-feed";
     els.messages.appendChild(liveEl);
-    scrollToBottom();
+    smartScrollToBottom();
     return liveEl;
   }
 
@@ -354,7 +363,7 @@
         el.appendChild(card);
       }
     }
-    scrollToBottom();
+    smartScrollToBottom();
   }
 
   function clearLive() {
@@ -371,7 +380,7 @@
     typingEl.className = "msg system typing";
     typingEl.textContent = "DSH 正在工作…";
     els.messages.appendChild(typingEl);
-    scrollToBottom();
+    smartScrollToBottom();
   }
 
   function hideTyping() {
