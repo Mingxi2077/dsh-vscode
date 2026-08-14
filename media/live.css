@@ -35,6 +35,45 @@
   margin: 6px 0;
 }
 
+/* ---------- 任务清单（todo/write） ---------- */
+
+.live-todos {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  font-size: 0.9em;
+}
+
+.live-todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--fg);
+}
+
+.live-todo-mark {
+  flex: none;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.live-todo-content {
+  word-break: break-word;
+}
+
+.live-todo-completed {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.live-todo-in_progress .live-todo-content {
+  font-weight: 600;
+  color: var(--accent);
+}
+
 /* ---------- 目标块（goals） ---------- */
 
 .live-goal {

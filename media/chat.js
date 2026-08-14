@@ -25,6 +25,7 @@
     texts: new Map(), // 块索引 → 文本草稿
     tools: new Map(), // callId → {name,args,status,result,isError}
     goals: new Map(), // goalId → {objective, operation}
+    todos: [], // 任务清单快照 [{content,status}]
     order: [], // 展示顺序：["reasoning","text","tool:<callId>","goal:<id>"]
     sealed: new Set(), // 已收到权威完整块（block-end）的键，后续增量不再累加
   };
@@ -261,6 +262,7 @@
     live.texts.clear();
     live.tools.clear();
     live.goals.clear();
+    live.todos = [];
     live.order = [];
     live.sealed.clear();
   }
@@ -289,6 +291,11 @@
         // DSH 目标状态：同一 goal 合并为一个卡片，操作徽标随最新状态变化
         if (!live.goals.has(msg.id)) live.order.push("goal:" + msg.id);
         live.goals.set(msg.id, { objective: msg.objective, operation: msg.operation });
+        break;
+      }
+      case "todo": {
+        // 任务清单全量快照：整体替换（每次 todo/write 都是完整清单）
+        live.todos = msg.todos || [];
         break;
       }
       case "block": {
@@ -381,6 +388,32 @@
     }
     header.textContent = headText + "…";
     el.appendChild(header);
+
+    // 任务清单（todo/write 全量快照）优先展示
+    if (live.todos.length) {
+      const todoBox = document.createElement("div");
+      todoBox.className = "live-todos";
+      for (const t of live.todos) {
+        const row = document.createElement("div");
+        row.className = "live-todo " + ("live-todo-" + (t.status || "pending"));
+        const mark = {
+          completed: "✅",
+          in_progress: "🔄",
+          pending: "⬜",
+        }[t.status] || "⬜";
+        const markEl = document.createElement("span");
+        markEl.className = "live-todo-mark";
+        markEl.textContent = mark;
+        const contentEl = document.createElement("span");
+        contentEl.className = "live-todo-content";
+        contentEl.textContent = t.content;
+        contentEl.title = { completed: "已完成", in_progress: "进行中", pending: "待办" }[t.status] || t.status;
+        row.appendChild(markEl);
+        row.appendChild(contentEl);
+        todoBox.appendChild(row);
+      }
+      el.appendChild(todoBox);
+    }
 
     for (const key of live.order) {
       if (key.startsWith("goal:")) {

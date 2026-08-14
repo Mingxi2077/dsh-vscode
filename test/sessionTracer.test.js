@@ -172,3 +172,43 @@ test("SessionTracer：goal/change 归一化为目标进度消息", async () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("SessionTracer：todo/write 归一化为任务清单快照", async () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-tracer-"));
+  try {
+    const home = path.join(root, "home");
+    const sessionsDir = path.join(home, "sessions-vscode");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const tracer = new SessionTracer({ DSH_HOME: home }, Date.now());
+    const sessionDir = path.join(sessionsDir, "bucket", "session-test-4");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const log = path.join(sessionDir, "session.jsonl");
+
+    const lines = [
+      '{"type":"session","version":0,"id":"s4","createdAt":1,"cwd":"C:\\\\p","delegationDepth":0}',
+      '{"type":"turn/start","seq":0,"time":1,"data":{"turn":1}}',
+      '{"type":"todo/write","seq":1,"time":2,"data":{"todos":[{"content":"扫描依赖","status":"in_progress"},{"content":"汇总报告","status":"pending"}]}}',
+      '{"type":"todo/write","seq":2,"time":3,"data":{"todos":[{"content":"扫描依赖","status":"completed"},{"content":"汇总报告","status":"completed"}]}}',
+      '{"type":"turn/end","seq":3,"time":4,"data":{"turn":1,"reason":{"kind":"completed"}}}',
+    ];
+
+    const messages = [];
+    const signal = new AbortController().signal;
+    const runPromise = tracer.start((m) => messages.push(m), signal);
+    await sleep(400);
+    fs.writeFileSync(log, lines.join("\n") + "\n");
+    await sleep(350);
+    tracer.finish();
+    await runPromise;
+
+    const todos = messages.filter((m) => m.kind === "todo");
+    assert.equal(todos.length, 2, "应收到两条 todo/write");
+    assert.equal(todos[0].todos.length, 2);
+    assert.equal(todos[0].todos[0].content, "扫描依赖");
+    assert.equal(todos[0].todos[0].status, "in_progress");
+    assert.equal(todos[1].todos[1].status, "completed", "第二条快照应显示全部完成");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

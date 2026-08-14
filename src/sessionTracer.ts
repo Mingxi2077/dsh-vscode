@@ -15,7 +15,14 @@ export type ProgressMessage =
   | { kind: "done"; turn: number; reason: string }
   | { kind: "title"; title: string }
   | { kind: "block"; key: string; blockType: "reasoning" | "text" | "tool-call"; text?: string; name?: string; args?: string; callId?: string }
-  | { kind: "goal"; id: string; operation: string; objective: string; phase: string };
+  | { kind: "goal"; id: string; operation: string; objective: string; phase: string }
+  | { kind: "todo"; todos: TodoItem[] };
+
+/** 任务清单条目（todo/write 事件全量快照中的一项）。 */
+export interface TodoItem {
+  content: string;
+  status: string;
+}
 
 export interface AssistantBlock {
   type: "reasoning" | "text" | "tool-call";
@@ -215,6 +222,17 @@ export class SessionTracer {
           objective: objective || "（无目标描述）",
           phase: String(goal.phase ?? ""),
         };
+      }
+      case "todo/write": {
+        // 任务清单全量快照（DSH todo 工具每次写整个清单）
+        const todos = Array.isArray(data.todos) ? data.todos : [];
+        const items: TodoItem[] = todos
+          .map((t) => ({
+            content: String((t as any)?.content ?? "").trim(),
+            status: String((t as any)?.status ?? "pending"),
+          }))
+          .filter((t) => t.content.length > 0);
+        return items.length > 0 ? { kind: "todo", todos: items } : undefined;
       }
       case "assistant/chunk": {
         // 流式块事件：只消费 block-end（权威完整块），delta 碎片稀疏且与
