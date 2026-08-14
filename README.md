@@ -31,6 +31,8 @@
 
 - 在聊天面板输入任务，`Enter` 发送。DSH 会在你的项目目录中自主工作（读文件、改代码、跑命令），**运行过程中实时展示思考过程与工具调用**（可折叠的"思考过程"、工具卡片、回答草稿，思考按「第 N 轮 · 第 M 步」细分），完成后给出正式答复。
 - **目标（goals）流式呈现**：DSH 使用 goal 工具创建/更新/完成目标时，会以目标卡片实时展示（🎯 创建 / ✏️ 更新 / ⏸ 暂停 / ▶️ 恢复 / ✅ 完成 / 🚧 受阻），并保留到最终思维链轨迹中。
+- **任务清单（todo）流式呈现**：DSH 规划多步任务时，实时展示可勾选的任务清单（⬜ 待办 → 🔄 进行中 → ✅ 已完成）。
+- **Provider 统一目录**：`/provider` 一键接入 16 个官方内置提供商（OpenAI / Anthropic / Google 等，填 Key 即用）或手动添加自建网关。
 - **会话自动命名**：任务完成后会话标题由 DSH 自动生成（不再是首条消息截断）。
 - **活动栏侧边栏**：活动栏 DSH 图标 → 侧边栏「状态」显示当前模型/思维强度/沙箱/记忆，并有打开对话、检查环境、兼容性自检、查看/编辑记忆等快捷入口。
 - **内置 Chat 集成**：在 VS Code 内置 Chat（Copilot Chat）里 `@dsh-agent <任务>` 直接唤起，可用 `#文件` 引用作为上下文，答复流式吐回聊天流。
@@ -59,6 +61,18 @@
 | `/context` | 查看当前挂载的上下文 |
 
 **用量状态条**：输入区上方会显示「模型 · 思维强度 · 输入/输出 token · 缓存命中率 · 推理 token」，随任务实时更新（数据来自 DSH 会话日志的 usage 字段）。
+
+### 接入第三方模型 / 自建网关
+
+DSH 底层支持 30+ 模型提供商。在聊天里 `/provider` 即可接入，全程无需手改配置文件：
+
+- **官方内置提供商（填 Key 即用）**：OpenAI、Anthropic、Google Gemini、Mistral、Groq、OpenRouter、xAI、Together AI、Cerebras、NVIDIA NIM、Moonshot (Kimi)、MiniMax、Hugging Face、Fireworks、DeepSeek、GitHub Copilot 等 16 个。选中 → 确认写入配置 → 输入 API Key（存系统密钥链）→ 立即使用。
+  - 写入的只是 `llm-pi-ai.providers.<id>` 的 `apiKeyEnv`，**模型清单由 DSH 目录自动提供**——DSH 升级新增模型后自动可用，配置不会过时。
+- **手动添加自定义提供商**：自建网关 / 中转（如 LMU AI、公司内部网关）。向导会问：显示名 → id → API 协议（OpenAI 兼容 `openai-completions` / Anthropic 协议 `anthropic-messages`）→ Base URL → API Key 环境变量名 → 模型列表，然后自动写入配置。
+- 配置写入 `~/.dsh/settings.yaml` 的 `llm-pi-ai.providers` 段（与 DSH 官方 web 的 Models 页同一机制），写入前自动备份（`.bak-<时间戳>`），失败自动回滚；下次任务立即生效，无需重启。
+- 「DSH: 检查环境」会输出当前已配置的 Provider 清单，方便核对。
+
+> 说明：`deepseek-chat` 等非推理模型不支持思维强度（reasoningEffort），切换 `/effort` 时请选 `off`；部分 provider（如 GitHub Copilot、OpenAI Codex）需要订阅账号或 OAuth，详见选中项的提示。
 
 ### 命令面板快捷操作
 
