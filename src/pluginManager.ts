@@ -182,6 +182,17 @@ export function analyzePluginError(stdout: string, stderr: string): PluginErrorA
   return { kind: "generic", lines: cap(errLines.length ? errLines : fallback, 8) };
 }
 
+/** 把 github 短名（github:owner/repo 或 owner/repo，可带 #ref）转成显式 git+https URL。
+ * pnpm 对 `github:` 协议可能解析成 git+ssh://（无 ssh key 时 clone 失败 exit 128）；
+ * 显式 https 一定走 https + 代理，Windows 无 ssh key 环境也可靠。 */
+export function githubShortToHttps(input: string): string {
+  const s = input.trim();
+  const [base, ref] = s.replace(/^github:/, "").split("#");
+  const m = base.match(/^([\w.-]+)\/([\w.-]+)$/);
+  if (!m) return s;
+  return `git+https://github.com/${m[1]}/${m[2]}.git${ref ? `#${ref}` : ""}`;
+}
+
 /** 识别插件安装来源类型（npm 包名 / github: 短名 / owner/repo 短名 / git URL / tarball URL / 本地路径）。 */
 export function installSourceKind(input: string): "npm" | "github" | "git-url" | "url" | "path" {
   const s = input.trim();

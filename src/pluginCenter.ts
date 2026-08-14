@@ -10,6 +10,7 @@ import {
   featuredPlugin,
   isInstalled,
   installSourceKind,
+  githubShortToHttps,
 } from "./pluginManager";
 import { ResolvedCli } from "./cli";
 import { t } from "./i18n";
@@ -154,13 +155,17 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
   if (!input) return;
 
   const source = input.trim();
-  // github 短名：允许 owner/repo（自动补 github: 前缀）
+  // github 短名（github:owner/repo 或 owner/repo）统一转成显式 git+https URL：
+  // pnpm 对 github: 协议可能解析成 git+ssh://，本机无 ssh key 时 clone 失败（exit 128）
   const resolvedSource =
-    kind === "github" && !source.startsWith("github:") && !source.startsWith("http")
-      ? `github:${source}`
+    kind === "github" && !source.startsWith("http")
+      ? githubShortToHttps(source)
       : source;
   const detected = installSourceKind(resolvedSource);
-  const kindLabel = { npm: t("npm 包", "npm package"), github: t("GitHub 仓库", "GitHub repo"), "git-url": t("git URL", "git URL"), url: t("URL", "URL"), path: t("本地路径", "local path") }[detected];
+  const kindLabel =
+    kind === "github"
+      ? t("GitHub 仓库", "GitHub repo")
+      : { npm: t("npm 包", "npm package"), github: t("GitHub 仓库", "GitHub repo"), "git-url": t("git URL", "git URL"), url: t("URL", "URL"), path: t("本地路径", "local path") }[detected];
 
   // 本地路径：pnpm 在 profile 目录执行，相对路径会相对 ~/.dsh/profiles/headless 解析——
   // 这里把相对路径基于当前工作区转成绝对路径，避免装到错误位置

@@ -99,6 +99,15 @@ test("featuredPlugin 清单与真实 npm 包名一致（抽查）", () => {
   }
 });
 
+test("githubShortToHttps：短名转显式 https URL", () => {
+  const { githubShortToHttps } = require("../out/pluginManager.js");
+  assert.equal(githubShortToHttps("github:dsh-external/dsh-artifact"), "git+https://github.com/dsh-external/dsh-artifact.git");
+  assert.equal(githubShortToHttps("dsh-external/dsh-artifact"), "git+https://github.com/dsh-external/dsh-artifact.git");
+  assert.equal(githubShortToHttps("owner/repo#main"), "git+https://github.com/owner/repo.git#main");
+  assert.equal(githubShortToHttps("https://github.com/a/b.git"), "https://github.com/a/b.git", "已是 URL 保持原样");
+  assert.equal(githubShortToHttps("dsh-plugin-doctor"), "dsh-plugin-doctor", "非短名保持原样");
+});
+
 test("installSourceKind：识别各种安装来源", () => {
   assert.equal(installSourceKind("dsh-plugin-doctor"), "npm");
   assert.equal(installSourceKind("@scope/pkg"), "npm");
