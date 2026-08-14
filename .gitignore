@@ -1,0 +1,7 @@
+node_modules/
+out/
+*.vsix
+.dsh-test-home/
+.npm-cache/
+.test-tmp-*/
+dist/

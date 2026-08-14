@@ -1,0 +1,13 @@
+.vscode/**
+src/**
+test/**
+node_modules/**
+**/*.map
+.gitignore
+.dsh-test-home/**
+.npm-cache/**
+.test-tmp-*/**
+build.ps1
+build.sh
+dist/**
+*.vsix

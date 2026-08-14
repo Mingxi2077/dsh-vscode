@@ -1,0 +1,106 @@
+/* 实时进度面板（思维链 / 工具调用）样式 —— 独立文件以保持 chat.css 精简 */
+/* 依赖 chat.css 中 :root 定义的 CSS 变量 */
+
+.usage-bar {
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: var(--code-bg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live-feed {
+  border-style: dashed !important;
+}
+
+.live-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.live-reasoning {
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--code-bg);
+}
+
+.live-reasoning summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.live-reasoning pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.88em;
+  color: var(--muted);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.live-text {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+  opacity: 0.85;
+  font-size: 0.95em;
+}
+
+.live-tool {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--code-bg);
+  font-size: 0.9em;
+}
+
+.live-tool.is-error {
+  border-color: var(--danger);
+}
+
+.live-tool-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-tool-name {
+  font-weight: 600;
+  font-family: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+.live-tool-status {
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
+
+.live-tool code {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 0.85em;
+}
+
+.live-tool-result {
+  margin-top: 4px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85em;
+}

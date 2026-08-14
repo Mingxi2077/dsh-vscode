@@ -1,0 +1,506 @@
+// DSH chat webview 前端（纯 JS，无依赖）
+(function () {
+  "use strict";
+
+  const vscode = acquireVsCodeApi();
+
+  const state = {
+    sessionId: "",
+    title: "",
+    messages: [],
+    blocks: [],
+    running: false,
+    runStartedAt: 0,
+    folder: "",
+    usage: null, // {input, output, cacheRead, reasoning, model, provider, effort}
+    selection: null,
+    effort: "",
+    skills: [],
+  };
+
+  const live = {
+    turn: 0,
+    reasoning: new Map(), // 块索引 → 思考文本
+    texts: new Map(), // 块索引 → 文本草稿
+    tools: new Map(), // callId → {name,args,status,result,isError}
+    order: [], // 展示顺序：["reasoning","text","tool:<callId>"]
+  };
+
+  const els = {
+    messages: document.getElementById("messages"),
+    input: document.getElementById("input"),
+    send: document.getElementById("btn-send"),
+    cancel: document.getElementById("btn-cancel"),
+    status: document.getElementById("status"),
+    sessionTitle: document.getElementById("session-title"),
+    sessionId: document.getElementById("session-id"),
+    contextBar: document.getElementById("context-bar"),
+    usageBar: document.getElementById("usage-bar"),
+    btnNew: document.getElementById("btn-new"),
+    btnSessions: document.getElementById("btn-sessions"),
+    btnAttach: document.getElementById("btn-attach"),
+    btnFile: document.getElementById("btn-file"),
+  };
+
+  let elapsedTimer = null;
+  let typingEl = null;
+
+  function post(message) {
+    vscode.postMessage(message);
+  }
+
+  // Markdown 渲染与文件引用链接化见 markdown.js（DSHMarkdown）
+
+  // ---------------- 渲染 ----------------
+
+  function scrollToBottom() {
+    els.messages.scrollTop = els.messages.scrollHeight;
+  }
+
+  function render() {
+    els.messages.innerHTML = "";
+    if (state.messages.length === 0) {
+      const hint = document.createElement("div");
+      hint.className = "empty-hint";
+      hint.innerHTML =
+        "<strong>DSH 助手</strong><br>输入消息让 DSH 在当前项目中工作。" +
+        "<br><br>· <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行" +
+        "<br>· 选中代码后点 <b>📎 选中代码</b> 加入上下文" +
+        "<br>· 会话自动保存在本机，可随时切换";
+      els.messages.appendChild(hint);
+    } else {
+      for (const m of state.messages) {
+        els.messages.appendChild(renderMessage(m));
+      }
+    }
+    scrollToBottom();
+  }
+
+  function renderMessage(m) {
+    const el = document.createElement("div");
+    el.className = "msg " + m.role;
+    el.dataset.id = m.id;
+
+    if (m.role === "user") {
+      el.textContent = m.content;
+      return el;
+    }
+    if (m.role === "system") {
+      el.textContent = m.content;
+      return el;
+    }
+
+    const header = document.createElement("div");
+    header.className = "msg-header";
+    const role = document.createElement("span");
+    role.className = "msg-role";
+    role.textContent = "DSH";
+    const actions = document.createElement("span");
+    actions.className = "msg-actions";
+    const copyBtn = document.createElement("button");
+    copyBtn.textContent = "复制";
+    copyBtn.dataset.act = "copy";
+    const insertBtn = document.createElement("button");
+    insertBtn.textContent = "插入代码";
+    insertBtn.dataset.act = "insert";
+    const applyBtn = document.createElement("button");
+    applyBtn.textContent = "应用到文件";
+    applyBtn.dataset.act = "apply";
+    actions.appendChild(copyBtn);
+    actions.appendChild(insertBtn);
+    actions.appendChild(applyBtn);
+    header.appendChild(role);
+    header.appendChild(actions);
+
+    const content = document.createElement("div");
+    content.className = "msg-content";
+    content.innerHTML = DSHMarkdown.renderMarkdown(m.content);
+    DSHMarkdown.linkifyFileRefs(content);
+
+    el.appendChild(header);
+    el.appendChild(content);
+    return el;
+  }
+
+  function fmtNum(n) {
+    if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+    return String(n);
+  }
+
+  /** 渲染输入区上方的用量/模型状态条。 */
+  function renderUsageBar() {
+    const bar = els.usageBar;
+    if (!bar) return;
+    const u = state.usage;
+    if (!u) {
+      bar.hidden = true;
+      return;
+    }
+    const parts = [];
+    if (u.model) parts.push("模型 " + u.model + (u.effort ? " · " + u.effort : ""));
+    else if (state.selection && state.selection.model) {
+      parts.push("模型 " + state.selection.model + (state.effort ? " · " + state.effort : ""));
+    }
+    parts.push("输入 " + fmtNum(u.input));
+    parts.push("输出 " + fmtNum(u.output));
+    if (u.cacheRead > 0) {
+      const total = u.cacheRead + u.input;
+      parts.push("缓存 " + Math.round((u.cacheRead / total) * 100) + "%");
+    }
+    if (u.reasoning > 0) parts.push("推理 " + fmtNum(u.reasoning));
+    bar.textContent = parts.join(" · ");
+    bar.hidden = false;
+  }
+
+  function renderContextBar() {
+    els.contextBar.innerHTML = "";
+    for (const b of state.blocks) {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      const label = document.createElement("span");
+      label.textContent = b.label;
+      const rm = document.createElement("button");
+      rm.textContent = "×";
+      rm.dataset.blockId = b.id;
+      chip.appendChild(label);
+      chip.appendChild(rm);
+      els.contextBar.appendChild(chip);
+    }
+  }
+
+  // ---------------- 实时进度（思维链 / 工具调用） ----------------
+
+  let liveEl = null;
+
+  function resetLive() {
+    live.turn = 0;
+    live.reasoning.clear();
+    live.texts.clear();
+    live.tools.clear();
+    live.order = [];
+  }
+
+  function ensureLiveEl() {
+    if (liveEl && liveEl.isConnected) return liveEl;
+    liveEl = document.createElement("div");
+    liveEl.className = "msg assistant live-feed";
+    els.messages.appendChild(liveEl);
+    scrollToBottom();
+    return liveEl;
+  }
+
+  function applyProgress(msg) {
+    if (!state.running) return;
+    switch (msg.kind) {
+      case "turn":
+        live.turn = msg.turn;
+        break;
+      case "tool": {
+        if (!live.tools.has(msg.callId)) {
+          live.order.push("tool:" + msg.callId);
+          live.tools.set(msg.callId, { name: msg.name, args: msg.args, status: "运行中…", result: "", isError: false });
+        } else {
+          const t = live.tools.get(msg.callId);
+          if (msg.args) t.args = msg.args;
+        }
+        break;
+      }
+      case "tool-result": {
+        const t = live.tools.get(msg.callId);
+        if (t) {
+          t.status = "完成";
+          t.isError = !!msg.isError;
+          t.result = msg.summary;
+        }
+        break;
+      }
+      case "reasoning":
+        if (!live.reasoning.has(msg.index)) live.order.push("reasoning:" + msg.index);
+        live.reasoning.set(msg.index, msg.text);
+        break;
+      case "text":
+        if (!live.texts.has(msg.index)) live.order.push("text:" + msg.index);
+        live.texts.set(msg.index, msg.text);
+        break;
+      case "assistant": {
+        // 完整快照：权威替换各块
+        const blocks = msg.blocks || [];
+        blocks.forEach((b, i) => {
+          if (b.type === "reasoning") {
+            if (!live.reasoning.has(i)) live.order.push("reasoning:" + i);
+            live.reasoning.set(i, b.text || "");
+          } else if (b.type === "text") {
+            if (!live.texts.has(i)) live.order.push("text:" + i);
+            live.texts.set(i, b.text || "");
+          } else if (b.type === "tool-call") {
+            const id = "snap-" + i;
+            if (!live.tools.has(id)) live.order.push("tool:" + id);
+            live.tools.set(id, { name: b.name || "tool", args: b.arguments || "", status: "运行中…", result: "", isError: false });
+          }
+        });
+        break;
+      }
+      case "done":
+        break;
+    }
+    renderLive();
+  }
+
+  function renderLive() {
+    const el = ensureLiveEl();
+    el.innerHTML = "";
+    const header = document.createElement("div");
+    header.className = "live-header";
+    header.textContent = "DSH 正在工作" + (live.turn ? " · 第 " + live.turn + " 轮" : "") + "…";
+    el.appendChild(header);
+
+    for (const key of live.order) {
+      if (key.startsWith("reasoning:")) {
+        const idx = Number(key.slice(10));
+        const text = live.reasoning.get(idx) || "";
+        const details = document.createElement("details");
+        details.className = "live-reasoning";
+        details.open = true;
+        const summary = document.createElement("summary");
+        summary.textContent = "思考过程";
+        const pre = document.createElement("pre");
+        pre.textContent = text || "…";
+        details.appendChild(summary);
+        details.appendChild(pre);
+        el.appendChild(details);
+      } else if (key.startsWith("text:")) {
+        const idx = Number(key.slice(5));
+        const text = live.texts.get(idx) || "";
+        const div = document.createElement("div");
+        div.className = "live-text";
+        div.textContent = text || "…";
+        el.appendChild(div);
+      } else if (key.startsWith("tool:")) {
+        const t = live.tools.get(key.slice(5));
+        if (!t) continue;
+        const card = document.createElement("div");
+        card.className = "live-tool" + (t.isError ? " is-error" : "");
+        const row = document.createElement("div");
+        row.className = "live-tool-row";
+        const name = document.createElement("span");
+        name.className = "live-tool-name";
+        name.textContent = "⚙ " + t.name;
+        const status = document.createElement("span");
+        status.className = "live-tool-status";
+        status.textContent = t.status;
+        row.appendChild(name);
+        row.appendChild(status);
+        card.appendChild(row);
+        if (t.args) {
+          const args = document.createElement("code");
+          args.textContent = t.args.slice(0, 200);
+          card.appendChild(args);
+        }
+        if (t.result) {
+          const res = document.createElement("div");
+          res.className = "live-tool-result";
+          res.textContent = t.result.slice(0, 200);
+          card.appendChild(res);
+        }
+        el.appendChild(card);
+      }
+    }
+    scrollToBottom();
+  }
+
+  function clearLive() {
+    if (liveEl) {
+      liveEl.remove();
+      liveEl = null;
+    }
+    resetLive();
+  }
+
+  function showTyping() {
+    hideTyping();
+    typingEl = document.createElement("div");
+    typingEl.className = "msg system typing";
+    typingEl.textContent = "DSH 正在工作…";
+    els.messages.appendChild(typingEl);
+    scrollToBottom();
+  }
+
+  function hideTyping() {
+    if (typingEl) {
+      typingEl.remove();
+      typingEl = null;
+    }
+  }
+
+  function setRunning(running) {
+    state.running = running;
+    els.send.disabled = running;
+    els.cancel.hidden = !running;
+    if (running) {
+      state.runStartedAt = Date.now();
+      updateElapsed();
+      elapsedTimer = setInterval(updateElapsed, 1000);
+      showTyping();
+    } else {
+      if (elapsedTimer) {
+        clearInterval(elapsedTimer);
+        elapsedTimer = null;
+      }
+      hideTyping();
+      els.status.textContent = "";
+      clearLive();
+    }
+  }
+
+  function updateElapsed() {
+    const sec = Math.floor((Date.now() - state.runStartedAt) / 1000);
+    els.status.textContent = "运行中 " + sec + "s";
+  }
+
+  // ---------------- 输入 ----------------
+
+  function sendInput() {
+    const text = els.input.value;
+    if (!text.trim() || state.running) return;
+    const cmdMatch = text.trim().match(/^\/(help|clear|memory|edit-memory|remember|context|provider|model|effort|skills|compact|status)(\s|$)/);
+    if (cmdMatch) {
+      els.input.value = "";
+      vscode.setState({ draft: "" });
+      post({ type: "command", text: text.trim() });
+      return;
+    }
+    els.input.value = "";
+    vscode.setState({ draft: "" });
+    post({ type: "send", text });
+  }
+
+  els.input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendInput();
+    }
+  });
+
+  els.input.addEventListener("input", () => {
+    vscode.setState({ draft: els.input.value });
+  });
+
+  els.send.addEventListener("click", sendInput);
+  els.cancel.addEventListener("click", () => post({ type: "cancel" }));
+  els.btnNew.addEventListener("click", () => post({ type: "newSession" }));
+  els.btnSessions.addEventListener("click", () => post({ type: "listSessions" }));
+  els.btnAttach.addEventListener("click", () => post({ type: "attachSelection" }));
+  els.btnFile.addEventListener("click", () => post({ type: "attachOpenFile" }));
+
+  els.contextBar.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-block-id]");
+    if (btn) {
+      post({ type: "removeContext", id: btn.dataset.blockId });
+    }
+  });
+
+  els.messages.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (btn) {
+      const msgEl = btn.closest(".msg");
+      const id = msgEl ? msgEl.dataset.id : "";
+      const msg = state.messages.find((m) => m.id === id);
+      if (!msg) return;
+      if (btn.dataset.act === "copy") {
+        navigator.clipboard.writeText(msg.content).then(() => {
+          btn.textContent = "已复制";
+          setTimeout(() => (btn.textContent = "复制"), 1200);
+        });
+      } else if (btn.dataset.act === "insert") {
+        post({ type: "insertCode", id });
+      } else if (btn.dataset.act === "apply") {
+        post({ type: "applyToFiles", id });
+      }
+    }
+    const link = e.target.closest("a[href^='http']");
+    if (link) {
+      e.preventDefault();
+      post({ type: "openExternal", url: link.getAttribute("href") });
+      return;
+    }
+    const fileRef = e.target.closest("a.file-ref");
+    if (fileRef) {
+      e.preventDefault();
+      const line = fileRef.dataset.line ? Number(fileRef.dataset.line) : undefined;
+      post({ type: "openFile", path: fileRef.dataset.path, line });
+    }
+  });
+
+  // ---------------- 主线程消息 ----------------
+
+  window.addEventListener("message", (e) => {
+    const msg = e.data;
+    switch (msg.type) {
+      case "init":
+        state.sessionId = msg.sessionId;
+        state.title = msg.title;
+        state.messages = msg.messages || [];
+        state.blocks = msg.blocks || [];
+        state.folder = msg.folder || "";
+        state.selection = msg.selection || null;
+        state.effort = msg.effort || "";
+        state.usage = msg.usage || null;
+        state.skills = msg.skills || [];
+        setRunning(!!msg.running);
+        renderContextBar();
+        renderUsageBar();
+        render();
+        break;
+      case "progress":
+        applyProgress(msg.msg);
+        break;
+      case "usage":
+        state.usage = msg;
+        renderUsageBar();
+        break;
+      case "selectionChanged":
+        state.selection = msg.selection || null;
+        state.effort = msg.effort || "";
+        renderUsageBar();
+        break;
+      case "appendMessage":
+        state.messages.push(msg.message);
+        render();
+        break;
+      case "appendMessages":
+        state.messages = state.messages.concat(msg.messages || []);
+        render();
+        break;
+      case "resetMessages":
+        state.messages = [];
+        render();
+        break;
+      case "running":
+        setRunning(!!msg.running);
+        break;
+      case "sessionChanged":
+        state.sessionId = msg.sessionId;
+        state.title = msg.title;
+        els.sessionTitle.textContent = msg.title;
+        els.sessionId.textContent = msg.sessionId.slice(0, 8);
+        break;
+      case "contextChanged":
+        state.blocks = msg.blocks || [];
+        renderContextBar();
+        break;
+      case "setDraft":
+        els.input.value = typeof msg.text === "string" ? msg.text : "";
+        els.input.focus();
+        break;
+    }
+  });
+
+  // ---------------- 启动 ----------------
+
+  const prev = vscode.getState();
+  if (prev && typeof prev.draft === "string") {
+    els.input.value = prev.draft;
+  }
+  els.input.focus();
+  post({ type: "ready" });
+})();
