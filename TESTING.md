@@ -1,88 +1,86 @@
-# DSH Agent for VS Code — 0.8.0 测试方案
+# DSH Agent for VS Code — 0.9.1 测试方案
 
-> 目标版本：0.8.0（本地已安装，需重载窗口生效）
+> 目标版本：0.9.1（本地已安装，需重载窗口生效）
 > 前置：dsh 已装（v0.1.0-rc.6）、DEEPSEEK_API_KEY 已配置、打开一个项目文件夹
 
 ## 0. 部署确认（重载前）
 
 1. 关闭所有 VS Code 窗口 → 重新打开（或 `Ctrl+Shift+P` → `Developer: Reload Window`）。
 2. 活动栏出现 DSH 鲸鱼图标。
-3. 侧边栏「状态」视图显示 `扩展：v0.8.0`（验证加载的是新版本）。
+3. 侧边栏「状态」视图显示 `扩展：v0.9.1`。
 4. `Ctrl+Shift+P` → `DSH: 检查环境`，输出面板应显示：
    - `dsh 定位`、`版本`、`API Key: 已配置`、`沙箱模式: workspace-write`
-   - **Provider 配置检查**段（列出已配置 provider）
+   - **Provider 配置检查**段、**headless 插件**段（🟢/⚪ 状态）、**模式预设**段
 5. `Ctrl+Shift+P` → `DSH: 兼容性自检`，约 10-20 秒后应提示**自检通过**。
 
-## 0b. Provider 目录专项（0.8.0 新功能）
+## 0a. 国际化专项（0.9.x）
 
 | # | 步骤 | 预期 |
 |---|------|------|
-| 0b.1 | 聊天输入 `/provider` | 出现分组列表：「✨ 官方内置提供商」「🛠 已配置的提供商」「手动添加自定义提供商…」 |
-| 0b.2 | 选一个未配置的内置（如 **Anthropic**） | 弹确认「将把 Anthropic 写入 ~/.dsh/settings.yaml…」→ 继续 → 提示输入 API Key → 输入后显示「提供商已切换：Anthropic」 |
-| 0b.3 | 打开 `~/.dsh/settings.yaml` | `llm-pi-ai.providers` 下出现 `anthropic:` 块（只有 displayName + apiKeyEnv，**无 models**）；原 lmuai 块保留；同目录有 `.bak-<时间戳>` 备份 |
-| 0b.4 | `/model` | 列出该 provider 的精选模型清单（Anthropic → claude-opus-4-1 / claude-sonnet-4-5 / claude-haiku-4-5），也可手动输入 |
-| 0b.5 | 再次 `/provider` 选 Anthropic | 不再弹「将写入」确认（已配置），直接进 API Key 步骤（显示已配置） |
-| 0b.6 | `/provider` → 「手动添加自定义提供商…」 | 向导：显示名 → id → 协议（openai-completions/anthropic-messages）→ baseURL → env 名 → 模型列表 → 提示设置 Key |
-| 0b.7 | 完成向导后 `/model` + 发一条消息 | 模型可用该自定义 provider 完成任务 |
-| 0b.8 | `DSH: 检查环境` | Provider 配置检查段列出新加的 provider（含 catalog/自定义标注） |
+| 0a.1 | 把 VS Code 界面语言切到 English（`Ctrl+Shift+P` → Configure Display Language → en → 重载） | 命令面板全是英文（DSH: Open Chat / Plugin Center / Mode Presets…）；侧边栏全英文（Model / Effort / Sandbox / Memory…）；聊天面板按钮/占位符英文 |
+| 0a.2 | 英文界面下发一条消息 | 注入给 DSH 的任务模板是英文，agent 用英文回复 |
+| 0a.3 | 切回中文界面重载 | 全部恢复中文 |
+| 0a.4 | 打开市场页 https://marketplace.visualstudio.com/items?itemName=mingxi2077.dsh-harness-vscode | 英文用户看到 "Everything is a plugin. Watch a plugin-driven AI agent..." 开头；中文用户看到"一切皆插件。" |
 
-> ⚠ 若选的内置 provider 无可用 Key，直接选「跳过」也可（用环境变量）；切换后 `/model` 手动输入模型名兜底。
+## 0b. 插件系统专项（0.9.x）
+
+| # | 步骤 | 预期 |
+|---|------|------|
+| 0b.1 | `Ctrl+Shift+P` → `DSH: 插件中心` | 列出「📦 已安装插件」（🟢 @deepseek-ai/dsh-base、🟢 dsh-headless、⚪ dsh-plugin-doctor 未激活）+「✨ 精选可装插件」 |
+| 0b.2 | 选中某个已装插件 → 详情 | 显示描述、状态（激活/未激活） |
+| 0b.3 | 插件中心 → 刷新 | 列表重新读取，无报错 |
+| 0b.4 | `Ctrl+Shift+P` → `DSH: 模式预设` | 显示 2 个预设（自动会话压缩 / 严格计划模式），都未启用 |
+| 0b.5 | 启用「自动会话压缩」→ 查看 `~/.dsh/profiles/headless/cordis.patch.yml` | 文件含 `dsh-vscode-preset: auto-compact` + `- id: compaction-basic` + `auto: true` |
+| 0b.6 | 再启用「严格计划模式」→ 发一个实现类任务（如"修改某文件加一行注释"） | agent 先出完整计划，调用 exit_plan_mode，**不直接改文件**（计划模式生效） |
+| 0b.7 | 停用「自动会话压缩」→ 查看 cordis.patch.yml | auto-compact 条目移除，**strict-plan 条目保留** |
+| 0b.8 | 停用「严格计划模式」→ 查看 cordis.patch.yml | **必须恢复为 `[]` 空数组**（纯注释会导致 DSH 无法启动——0.9.1 修复点） |
+| 0b.9 | 停用全部预设后，`dsh --dump-config` 或「DSH: 检查环境」 | **正常**（无 "must be a top-level YAML array" 报错） |
+
+## 0c. 预设与截图回归（之前已测）
+
+- 市场页截图（3 张）仍显示：https://marketplace.visualstudio.com/items?itemName=mingxi2077.dsh-harness-vscode
+- README 英文主版 + 中文版（README.zh.md）都有，开头是"一切皆插件 / Everything is a plugin"
 
 ## 1. 基础对话（回归）
 
 | # | 步骤 | 预期 |
 |---|------|------|
-| 1.1 | 打开对话面板，输入 `请介绍一下当前项目结构` | 状态栏出现「DSH 运行中」；实时展示思考过程与工具调用 |
-| 1.2 | 等待任务完成 | 得到正式 markdown 答复；输入区上方出现「模型 · 输入/输出 token · 缓存命中率」 |
-| 1.3 | 回答上方出现「思维链与工具调用（N 项）」折叠块 | 默认收起，可展开查看每步思考与工具卡 |
+| 1.1 | 打开对话面板，输入 `请介绍一下当前项目结构` | 状态栏「DSH 运行中」；实时思考/工具调用；最终 markdown 答复 |
+| 1.2 | 回答上方「思维链与工具调用（N 项）」折叠块 | 可展开，每步思考与工具卡 |
+| 1.3 | 发多步任务 | 头部显示「第 N 轮 · 第 M 步」 |
+| 1.4 | 发 goal 提示词 | 🎯 目标卡 → ✅ 完成 |
+| 1.5 | 发多步骤任务 | 任务清单 ⬜→🔄→✅ |
+| 1.6 | 完成后看面板标题 | DSH 自动命名 |
 
-## 2. 0.7.0 新功能专项
+## 2. Provider 回归
 
-### 2.1 思维链按步骤细分
-- 步骤：发一个需要多步工具调用的任务，例如 `统计项目里所有 .ts 文件的行数总和`。
-- 预期：流式阶段头部显示「DSH 正在工作 · 第 1 轮 · 第 1 步 → 第 2 步 …」；每步的思考过程独立成段（可分别折叠）。
-
-### 2.2 goals 目标流式呈现
-- 步骤：发一个让 DSH 使用目标工具的提示，例如：
-  `请用 create_goal 创建一个目标「审计项目依赖安全性」，然后完成它。`
-- 预期：
-  - 流式阶段出现**目标卡片**：🎯 目标已创建 →（执行中）→ ✅ 目标已完成，卡片显示目标描述；
-  - 完成后思维链轨迹里保留目标块（🎯 已创建 / ✅ 已完成 徽标）。
-
-### 2.2b 任务清单（todo）流式呈现
-- 步骤：发一个多步骤任务，例如 `扫描工作区所有 package.json 的依赖安全性并生成报告`（DSH 会规划任务清单）。
-- 预期：流式阶段出现**任务清单卡片**，逐项显示 ⬜ 待办 → 🔄 进行中 → ✅ 已完成，随执行实时更新；全部完成后清单全绿。
-
-### 2.3 会话自动命名
-- 步骤：完成任意一轮对话后，看面板标题。
-- 预期：面板标题变为 `DSH — <DSH 生成的简短标题>`（不再是首条消息前 40 字截断）；会话列表里也是新标题。
-- 注意：仅当日志里产生 `session/title`（非 fallback）事件时生效；若无则回退首条消息截断（不算失败）。
-
-### 2.4 思维链完整性（block-end 权威替换）
-- 步骤：发一个思考较长的任务（如 `分析 package.json 的依赖并给出升级建议`），展开思维链。
-- 预期：每步思考文本**完整**（开头不缺失，如 "The user wants…" 完整出现）；与 DSH 最终回答内容一致。
+| # | 步骤 | 预期 |
+|---|------|------|
+| 2.1 | 聊天 `/provider` | 分组列表：官方内置 / 已配置 / 手动添加 |
+| 2.2 | 选内置（如 Anthropic）→ 确认写入 → 输 Key | settings.yaml 出现 `anthropic:`（仅 apiKeyEnv，无 models） |
+| 2.3 | `/model` | 列出该 provider 精选模型 |
+| 2.4 | `/provider` → 手动添加自定义 | 向导可用，写入配置 + 备份文件 |
+| 2.5 | `DSH: 检查环境` | Provider 段列出已配置 provider |
 
 ## 3. 核心功能回归
 
-| # | 功能 | 操作 | 预期 |
-|---|------|------|------|
-| 3.1 | slash 命令 | 输入 `/help` | 列出全部命令 |
-| 3.2 | 长期记忆 | `/remember 构建命令是 npm run compile` → 重开新会话 | 新会话任务自动参考记忆 |
-| 3.3 | 模型切换 | `/model` 选模型；`/effort` 切 high；`/status` 查看 | 状态条与侧边栏更新；非推理模型用 off |
-| 3.4 | 上下文挂载 | 选中代码 → 📎 选中代码；📄 当前文件 | 输入区上方出现上下文块，可移除 |
-| 3.5 | 文件引用点击 | 回答里出现 `src/xxx.ts:12` 样式路径 | 点击在编辑器打开并定位到行 |
-| 3.6 | 代码块应用 | 回答含代码块 → 右上角「应用到文件」 | 弹确认 → 写入项目文件（不越出工作区） |
-| 3.7 | 取消 | 任务运行中点「取消」 | 任务终止，状态复位可再发 |
-| 3.8 | 会话切换 | 🕘 历史会话 → 选择 | 载入历史；＋ 新建会话清空 |
-| 3.9 | @dsh-agent | 内置 Chat（Copilot Chat）输入 `@dsh-agent 总结项目` | 流式进度 + markdown 答复 |
-| 3.10 | 沙箱 | 让 DSH 尝试写工作区外文件（如 `C:\Windows\temp\x.txt`） | 被拒绝（workspace-write 默认） |
+| # | 功能 | 预期 |
+|---|------|------|
+| 3.1 | `/remember` 记忆 → 新会话任务 | 新任务自动参考记忆 |
+| 3.2 | 选中代码 → 📎 加入上下文 | 上下文块出现，可移除 |
+| 3.3 | 文件引用点击（`src/xx.ts:12`） | 编辑器打开定位 |
+| 3.4 | 代码块「应用到文件」 | 确认 → 写入（不越出工作区） |
+| 3.5 | 取消任务 | 状态复位可再发 |
+| 3.6 | 历史会话 / 新建会话 | 正常切换 |
+| 3.7 | @dsh-agent 参与者 | 内置 Chat 里可用 |
+| 3.8 | 沙箱：让 DSH 写工作区外文件 | 被拒 |
 
-## 4. 自动化测试（可选，开发者）
+## 4. 自动化测试（可选）
 
 ```powershell
 cd E:\my_project\testAPI\DEEPSEEK\harness\dsh-vscode
-npm test          # 20 个单元测试（node --test 逐个跑也行）
-node test\e2e.test.js   # E2E：真实 dsh tiny 任务验证流式补丁生效（需 API Key）
+npm test          # 45 个单元测试
+node test\e2e.test.js   # E2E（需 API Key）
 ```
 
 ## 5. 结果记录
@@ -90,8 +88,10 @@ node test\e2e.test.js   # E2E：真实 dsh tiny 任务验证流式补丁生效�
 | 测试项 | 结果（通过/失败） | 备注 |
 |--------|------------------|------|
 | 0.x 部署确认 | | |
+| 0a i18n | | |
+| 0b 插件系统 | | |
 | 1.x 基础对话 | | |
-| 2.x 新功能 | | |
+| 2.x Provider | | |
 | 3.x 回归 | | |
 
-> 发现失败项请记录：哪一步、实际表现、期望表现。修复流程：改代码 → `npm run compile` → 重载窗口复测。
+> 发现失败项请记录：哪一步、实际表现、期望表现。
