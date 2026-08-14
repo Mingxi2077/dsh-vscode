@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import {
   FEATURED_PLUGINS,
   PluginInfo,
@@ -160,10 +161,24 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
   const detected = installSourceKind(resolvedSource);
   const kindLabel = { npm: t("npm 包", "npm package"), github: t("GitHub 仓库", "GitHub repo"), "git-url": t("git URL", "git URL"), url: t("URL", "URL"), path: t("本地路径", "local path") }[detected];
 
+  // 本地路径：pnpm 在 profile 目录执行，相对路径会相对 ~/.dsh/profiles/headless 解析——
+  // 这里把相对路径基于当前工作区转成绝对路径，避免装到错误位置
+  let finalSource = resolvedSource;
+  if (detected === "path" && !path.isAbsolute(resolvedSource)) {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+      void vscode.window.showWarningMessage(
+        t("相对路径需要先打开一个工作区文件夹；请改用绝对路径。", "A relative local path requires an open workspace folder; use an absolute path instead.")
+      );
+      return;
+    }
+    finalSource = path.resolve(root, resolvedSource);
+  }
+
   const confirm = await vscode.window.showWarningMessage(
     t(
-      `将从「${kindLabel}」安装 ${resolvedSource} 到 headless profile。继续？`,
-      `Install ${resolvedSource} from "${kindLabel}" into the headless profile? Continue?`
+      `将从「${kindLabel}」安装 ${finalSource} 到 headless profile。继续？`,
+      `Install ${finalSource} from "${kindLabel}" into the headless profile? Continue?`
     ),
     { modal: true },
     t("安装", "Install")
@@ -171,13 +186,13 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
   if (confirm !== t("安装", "Install")) return;
 
   const progress = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", resolvedSource) },
-    async () => runPluginCommand(cli, "add", resolvedSource)
+    { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", finalSource) },
+    async () => runPluginCommand(cli, "add", finalSource)
   );
   if (progress.ok) {
-    void vscode.window.showInformationMessage(localizePluginResult(resolvedSource, progress));
+    void vscode.window.showInformationMessage(localizePluginResult(finalSource, progress));
   } else {
-    void vscode.window.showErrorMessage(localizePluginResult(resolvedSource, progress));
+    void vscode.window.showErrorMessage(localizePluginResult(finalSource, progress));
   }
 }
 
