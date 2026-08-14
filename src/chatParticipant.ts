@@ -5,6 +5,7 @@ import { SessionTracer } from "./sessionTracer";
 import { writeModelPatch, loadSelection } from "./modelSelection";
 import { stableHash } from "./sessionStore";
 import { ProjectMemory } from "./memory";
+import { isZh } from "./i18n";
 
 /**
  * 注册 @dsh-agent 聊天参与者：在 VS Code 内置 Chat 里 @dsh-agent <任务> 即可唤起，
@@ -32,7 +33,7 @@ export function registerChatParticipant(
 
     const refText = await collectReferences(request.references);
     const memory = new ProjectMemory(folder.uri.fsPath);
-    const taskText = buildChatTaskText(folder.uri.fsPath, prompt, refText, memory.excerpt());
+    const taskText = buildChatTaskText(folder.uri.fsPath, prompt, refText, memory.excerpt(), isZh());
 
     let cli: ResolvedCli;
     try {
@@ -134,19 +135,22 @@ function buildChatTaskText(
   folderPath: string,
   prompt: string,
   refText: string,
-  memoryText: string
+  memoryText: string,
+  zh = true
 ): string {
   const lines: string[] = [
-    "你在 VS Code 的 Copilot Chat 中通过 @dsh-agent 辅助用户完成项目任务。",
-    `项目根目录：${folderPath}`,
-    "请直接回应这个任务，不要复述或客套。",
+    zh
+      ? "你在 VS Code 的 Copilot Chat 中通过 @dsh-agent 辅助用户完成项目任务。"
+      : "You are helping the user with a project task in VS Code's Copilot Chat via @dsh-agent.",
+    zh ? `项目根目录：${folderPath}` : `Project root: ${folderPath}`,
+    zh ? "请直接回应这个任务，不要复述或客套。" : "Respond directly to this task; do not restate or be polite.",
   ];
   if (memoryText) {
-    lines.push("", "--- 项目长期记忆（按需参考）---", memoryText);
+    lines.push("", zh ? "--- 项目长期记忆（按需参考）---" : "--- Project long-term memory (reference as needed) ---", memoryText);
   }
   if (refText) {
-    lines.push("", "用户引用了以下文件/内容，按需参考：", refText);
+    lines.push("", zh ? "用户引用了以下文件/内容，按需参考：" : "The user referenced the following files/content; reference as needed:", refText);
   }
-  lines.push("", "--- 任务 ---", prompt);
+  lines.push("", zh ? "--- 任务 ---" : "--- Task ---", prompt);
   return lines.join("\n");
 }

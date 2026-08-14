@@ -1,4 +1,5 @@
 {
+  "view.status.name": "Status",
   "command.openChat": "DSH: Open Chat",
   "command.pluginCenter": "DSH: Plugin Center",
   "command.presetCenter": "DSH: Mode Presets",

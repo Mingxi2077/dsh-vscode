@@ -168,7 +168,7 @@
       "dsh-harness-vscode-sidebar": [
         {
           "id": "dsh-harness-vscode.status",
-          "name": "状态",
+          "name": "%view.status.name%",
           "type": "tree"
         }
       ]

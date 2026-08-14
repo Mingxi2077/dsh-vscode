@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import type { CodeBlock } from "./codeBlocks";
+import { t } from "./i18n";
 
 /** 确认并把代码块写入文件。 */
 export async function applyCodeBlock(folderPath: string, block: CodeBlock): Promise<void> {
@@ -42,7 +43,7 @@ export async function applyCodeBlock(folderPath: string, block: CodeBlock): Prom
 async function saveAs(folderPath: string, block: CodeBlock): Promise<void> {
   const uri = await vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(folderPath),
-    saveLabel: "写入",
+    saveLabel: t("写入", "Write"),
   });
   if (!uri) return;
   fs.writeFileSync(uri.fsPath, block.code.endsWith("\n") ? block.code : block.code + "\n", "utf8");

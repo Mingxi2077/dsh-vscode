@@ -21,7 +21,7 @@ import {
   providerDisplayName,
 } from "./modelSelection";
 import { refreshSidebarStatus } from "./sidebar";
-import { t, tf } from "./i18n";
+import { t, tf, isZh } from "./i18n";
 
 /** 用户在输入区上方挂载的上下文块（选中代码 / 文件片段）。 */
 export interface ContextBlock {
@@ -198,7 +198,7 @@ export class ChatPanel {
   private createFreshSession(): ChatSession {
     return {
       id: UUID(),
-      title: "新会话",
+      title: t("新会话", "New session"),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       messages: [],
@@ -246,7 +246,7 @@ export class ChatPanel {
   private async listSessions(): Promise<void> {
     const summaries = this.store.list();
     if (summaries.length === 0) {
-      void vscode.window.showInformationMessage("当前目录还没有历史会话。");
+      void vscode.window.showInformationMessage(t("当前目录还没有历史会话。", "No session history in this directory yet."));
       return;
     }
     const pick = await vscode.window.showQuickPick(
@@ -256,7 +256,7 @@ export class ChatPanel {
         detail: new Date(s.updatedAt).toLocaleString(),
         id: s.id,
       })),
-      { placeHolder: "选择要载入的会话" }
+      { placeHolder: t("选择要载入的会话", "Choose a session to load") }
     );
     if (pick) this.loadSession(pick.id);
   }
@@ -384,7 +384,7 @@ export class ChatPanel {
     const firstUser = this.session.messages.find((m) => m.role === "user");
     if (firstUser) {
       const title = firstUser.content.replace(/\s+/g, " ").trim().slice(0, 40);
-      this.session.title = title || "新会话";
+      this.session.title = title || t("新会话", "New session");
     }
     this.panel.title = `DSH — ${this.session.title}`;
   }
@@ -756,12 +756,13 @@ export class ChatPanel {
     const sel = this.selection;
     if (sel?.provider && sel.model) {
       extraSections.push(
-        `本会话模型配置：提供商 ${sel.provider}，模型 ${sel.model}` +
-          (this.effectiveEffort() ? `，思维强度 ${this.effectiveEffort()}` : "")
+        t("本会话模型配置：提供商 {0}，模型 {1}", "Session model config: provider {0}, model {1}")
+          .replace("{0}", sel.provider).replace("{1}", sel.model) +
+          (this.effectiveEffort() ? t("，思维强度 {0}", ", effort {0}").replace("{0}", this.effectiveEffort()!) : "")
       );
     }
     if (this.enabledSkills.length > 0) {
-      extraSections.push(`本会话已启用技能：${this.enabledSkills.join("、")}（按需通过技能工具加载）`);
+      extraSections.push(t("本会话已启用技能：{0}（按需通过技能工具加载）", "Skills enabled in this session: {0} (load on demand via the skill tool)").replace("{0}", this.enabledSkills.join(t("、", ", "))));
     }
 
     return buildTaskText(
@@ -771,7 +772,8 @@ export class ChatPanel {
       this.memory,
       historyN,
       maxChars,
-      extraSections
+      extraSections,
+      !isZh()
     );
   }
 
@@ -795,7 +797,7 @@ export class ChatPanel {
     if (!msg) return;
     const blocks = extractCodeBlocks(msg.content);
     if (blocks.length === 0) {
-      void vscode.window.showWarningMessage("这段回答里没有可应用的代码块。");
+      void vscode.window.showWarningMessage(t("这段回答里没有可应用的代码块。", "No applicable code blocks in this answer."));
       return;
     }
     if (blocks.length === 1) {

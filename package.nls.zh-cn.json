@@ -1,4 +1,5 @@
 {
+  "view.status.name": "状态",
   "command.openChat": "DSH: 打开对话",
   "command.pluginCenter": "DSH: 插件中心",
   "command.presetCenter": "DSH: 模式预设",

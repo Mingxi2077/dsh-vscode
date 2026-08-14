@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { loadSelection, readDefaultEffort } from "./modelSelection";
 import { ProjectMemory } from "./memory";
 import { stableHash } from "./sessionStore";
+import { t } from "./i18n";
 
 /** 侧边栏状态刷新事件（ChatPanel 改变选择后调用）。 */
 const emitter = new vscode.EventEmitter<StatusItem | undefined>();
@@ -12,9 +13,9 @@ export function refreshSidebarStatus(): void {
 /** 当前运行的扩展版本号。 */
 function currentVersion(): string {
   try {
-    return vscode.extensions.getExtension("mingxi2077.dsh-harness-vscode")?.packageJSON.version ?? "未知";
+    return vscode.extensions.getExtension("mingxi2077.dsh-harness-vscode")?.packageJSON.version ?? t("未知", "unknown");
   } catch {
-    return "未知";
+    return t("未知", "unknown");
   }
 }
 
@@ -53,23 +54,23 @@ class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
     const mode = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
     const mem = folder ? new ProjectMemory(folder.uri.fsPath) : undefined;
 
-    items.push(new StatusItem(`模型：${sel?.model ?? "DSH 默认"}`, { icon: "symbol-method" }));
+    items.push(new StatusItem(`${t("模型", "Model")}：${sel?.model ?? t("DSH 默认", "DSH default")}`, { icon: "symbol-method" }));
     items.push(
-      new StatusItem(`思维强度：${sel?.reasoningEffort ?? readDefaultEffort() ?? "未设置"}`, {
+      new StatusItem(`${t("思维强度", "Effort")}：${sel?.reasoningEffort ?? readDefaultEffort() ?? t("未设置", "not set")}`, {
         icon: "symbol-property",
       })
     );
-    items.push(new StatusItem(`沙箱：${mode}`, { icon: "shield" }));
-    items.push(new StatusItem(mem?.exists() ? "记忆：已记录" : "记忆：空", { icon: "note" }));
-    items.push(new StatusItem(`扩展：v${currentVersion()}`, { icon: "versions" }));
+    items.push(new StatusItem(`${t("沙箱", "Sandbox")}：${mode}`, { icon: "shield" }));
+    items.push(new StatusItem(mem?.exists() ? t("记忆：已记录", "Memory: set") : t("记忆：空", "Memory: empty"), { icon: "note" }));
+    items.push(new StatusItem(`${t("扩展", "Extension")}：v${currentVersion()}`, { icon: "versions" }));
     items.push(new StatusItem("", {}));
 
-    items.push(new StatusItem("打开对话", { command: "dsh-harness-vscode.openChat", icon: "comment-discussion" }));
-    items.push(new StatusItem("新建会话", { command: "dsh-harness-vscode.newSession", icon: "add" }));
-    items.push(new StatusItem("检查环境", { command: "dsh-harness-vscode.checkEnvironment", icon: "search" }));
-    items.push(new StatusItem("兼容性自检", { command: "dsh-harness-vscode.selfTest", icon: "beaker" }));
-    items.push(new StatusItem("查看记忆", { command: "dsh-harness-vscode.showMemory", icon: "note" }));
-    items.push(new StatusItem("编辑记忆", { command: "dsh-harness-vscode.editMemory", icon: "edit" }));
+    items.push(new StatusItem(t("打开对话", "Open Chat"), { command: "dsh-harness-vscode.openChat", icon: "comment-discussion" }));
+    items.push(new StatusItem(t("新建会话", "New Session"), { command: "dsh-harness-vscode.newSession", icon: "add" }));
+    items.push(new StatusItem(t("检查环境", "Check Environment"), { command: "dsh-harness-vscode.checkEnvironment", icon: "search" }));
+    items.push(new StatusItem(t("兼容性自检", "Self-Test"), { command: "dsh-harness-vscode.selfTest", icon: "beaker" }));
+    items.push(new StatusItem(t("查看记忆", "View Memory"), { command: "dsh-harness-vscode.showMemory", icon: "note" }));
+    items.push(new StatusItem(t("编辑记忆", "Edit Memory"), { command: "dsh-harness-vscode.editMemory", icon: "edit" }));
 
     return items;
   }

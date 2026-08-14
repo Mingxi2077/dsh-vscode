@@ -145,7 +145,7 @@ async function pickFolder(): Promise<vscode.WorkspaceFolder | undefined> {
       description: f.uri.fsPath,
       folder: f,
     })),
-    { placeHolder: "选择 DSH 工作目录" }
+    { placeHolder: t("选择 DSH 工作目录", "Choose the DSH working directory") }
   );
   return pick?.folder;
 }
