@@ -19,6 +19,7 @@ import {
   writeModelPatch,
   readDefaultEffort,
 } from "./modelSelection";
+import { refreshSidebarStatus } from "./sidebar";
 
 /** 用户在输入区上方挂载的上下文块（选中代码 / 文件片段）。 */
 export interface ContextBlock {
@@ -522,8 +523,9 @@ export class ChatPanel {
   async setSelection(sel: ModelSelection | undefined): Promise<void> {
     this.selection = sel;
     saveSelection(this.globalStorageDir, this.folderHash, sel);
-    // 立即通知前端更新状态栏/用量显示
+    // 立即通知前端更新状态栏/用量显示，并刷新侧边栏
     this.post({ type: "selectionChanged", selection: this.selection, effort: this.effectiveEffort() });
+    refreshSidebarStatus();
   }
 
   setEnabledSkills(names: string[]): void {
