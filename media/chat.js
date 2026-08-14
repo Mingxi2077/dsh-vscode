@@ -20,10 +20,12 @@
 
   const live = {
     turn: 0,
+    step: 0,
     reasoning: new Map(), // 块索引 → 思考文本
     texts: new Map(), // 块索引 → 文本草稿
     tools: new Map(), // callId → {name,args,status,result,isError}
     order: [], // 展示顺序：["reasoning","text","tool:<callId>"]
+    sealed: new Set(), // 已收到权威完整块（block-end）的键，后续增量不再累加
   };
 
   const els = {
@@ -232,10 +234,12 @@
 
   function resetLive() {
     live.turn = 0;
+    live.step = 0;
     live.reasoning.clear();
     live.texts.clear();
     live.tools.clear();
     live.order = [];
+    live.sealed.clear();
   }
 
   function ensureLiveEl() {
@@ -252,7 +256,35 @@
     switch (msg.kind) {
       case "turn":
         live.turn = msg.turn;
+        live.step = 0;
         break;
+      case "step":
+        live.step = msg.step;
+        live.turn = msg.turn;
+        break;
+      case "block": {
+        // 权威完整块（assistant/chunk block-end）：替换内容并封存键，防增量双写
+        if (msg.blockType === "reasoning" && msg.text) {
+          live.sealed.add(msg.key);
+          if (!live.reasoning.has(msg.key)) live.order.push("reasoning:" + msg.key);
+          live.reasoning.set(msg.key, msg.text);
+        } else if (msg.blockType === "text" && msg.text) {
+          live.sealed.add(msg.key);
+          if (!live.texts.has(msg.key)) live.order.push("text:" + msg.key);
+          live.texts.set(msg.key, msg.text);
+        } else if (msg.blockType === "tool-call") {
+          const id = msg.callId || msg.key;
+          if (!live.tools.has(id)) {
+            live.order.push("tool:" + id);
+            live.tools.set(id, { name: msg.name || "tool", args: msg.args || "", status: "运行中…", result: "", isError: false });
+          } else {
+            const t = live.tools.get(id);
+            if (msg.args) t.args = msg.args;
+            if (msg.name) t.name = msg.name;
+          }
+        }
+        break;
+      }
       case "tool": {
         if (!live.tools.has(msg.callId)) {
           live.order.push("tool:" + msg.callId);
@@ -273,10 +305,12 @@
         break;
       }
       case "reasoning":
+        if (live.sealed.has(msg.key)) break;
         if (!live.reasoning.has(msg.key)) live.order.push("reasoning:" + msg.key);
         live.reasoning.set(msg.key, (live.reasoning.get(msg.key) || "") + msg.text);
         break;
       case "text":
+        if (live.sealed.has(msg.key)) break;
         if (!live.texts.has(msg.key)) live.order.push("text:" + msg.key);
         live.texts.set(msg.key, (live.texts.get(msg.key) || "") + msg.text);
         break;
@@ -311,7 +345,12 @@
     el.innerHTML = "";
     const header = document.createElement("div");
     header.className = "live-header";
-    header.textContent = "DSH 正在工作" + (live.turn ? " · 第 " + live.turn + " 轮" : "") + "…";
+    let headText = "DSH 正在工作";
+    if (live.turn) {
+      headText += " · 第 " + live.turn + " 轮";
+      if (live.step) headText += " · 第 " + live.step + " 步";
+    }
+    header.textContent = headText + "…";
     el.appendChild(header);
 
     for (const key of live.order) {

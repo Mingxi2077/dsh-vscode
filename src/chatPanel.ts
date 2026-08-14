@@ -370,6 +370,11 @@ export class ChatPanel {
   }
 
   private updateTitleFromSession(): void {
+    // DSH 已生成标题（session/title 事件）时保留，不再用首条消息截断覆盖
+    if (this.session.dshTitle) {
+      this.panel.title = `DSH — ${this.session.title}`;
+      return;
+    }
     const firstUser = this.session.messages.find((m) => m.role === "user");
     if (firstUser) {
       const title = firstUser.content.replace(/\s+/g, " ").trim().slice(0, 40);
@@ -444,14 +449,35 @@ export class ChatPanel {
       const traceOrder: string[] = [];
       const reasoningMap = new Map<string, string>();
       const toolMap = new Map<string, { name: string; args: string; result?: string; isError?: boolean }>();
+      // 已收到权威完整块（block-end）的键：后续增量碎片不再累加，避免双写
+      const sealedKeys = new Set<string>();
       const recordTrace = (msg: ProgressMessage) => {
         if (msg.kind === "reasoning") {
+          if (sealedKeys.has(msg.key)) return;
           if (!reasoningMap.has(msg.key)) {
             reasoningMap.set(msg.key, "");
             traceOrder.push(`r:${msg.key}`);
           }
           // 同 (turn,step,index) 内若分多批则累加；跨 step 是不同 key，各自成段
           reasoningMap.set(msg.key, (reasoningMap.get(msg.key) ?? "") + msg.text);
+        } else if (msg.kind === "block") {
+          if (msg.blockType === "reasoning" && msg.text) {
+            sealedKeys.add(msg.key);
+            if (!reasoningMap.has(msg.key)) traceOrder.push(`r:${msg.key}`);
+            reasoningMap.set(msg.key, msg.text);
+          } else if (msg.blockType === "text") {
+            sealedKeys.add(msg.key);
+          } else if (msg.blockType === "tool-call") {
+            const id = msg.callId || msg.key;
+            if (!toolMap.has(id)) {
+              toolMap.set(id, { name: msg.name ?? "tool", args: msg.args ?? "" });
+              traceOrder.push(`t:${id}`);
+            } else {
+              const t = toolMap.get(id)!;
+              if (msg.args) t.args = msg.args;
+              if (msg.name) t.name = msg.name;
+            }
+          }
         } else if (msg.kind === "tool") {
           if (!toolMap.has(msg.callId)) {
             toolMap.set(msg.callId, { name: msg.name, args: msg.args });
@@ -475,6 +501,12 @@ export class ChatPanel {
             if (msg.kind === "usage") {
               this.lastUsage = msg;
               this.post({ type: "usage", ...msg, effort: this.effectiveEffort() });
+            } else if (msg.kind === "title") {
+              // DSH 生成的会话标题：更新面板标题与会话记录，并同步前端
+              this.session.title = msg.title;
+              this.session.dshTitle = msg.title;
+              this.panel.title = `DSH — ${msg.title}`;
+              this.post({ type: "sessionChanged", sessionId: this.session.id, title: msg.title });
             } else {
               recordTrace(msg);
               this.post({ type: "progress", msg });

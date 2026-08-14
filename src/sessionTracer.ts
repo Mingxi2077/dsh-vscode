@@ -5,13 +5,16 @@ import * as os from "os";
 /** 归一化后的流式进度消息（发送给 Webview 展示思维链 / 工具调用）。 */
 export type ProgressMessage =
   | { kind: "turn"; turn: number }
+  | { kind: "step"; turn: number; step: number; active: boolean }
   | { kind: "tool"; callId: string; name: string; args: string }
   | { kind: "tool-result"; callId: string; isError: boolean; summary: string }
   | { kind: "reasoning"; key: string; index: number; text: string }
   | { kind: "text"; key: string; index: number; text: string }
   | { kind: "assistant"; blocks: AssistantBlock[] }
   | { kind: "usage"; input: number; output: number; cacheRead: number; reasoning: number; model: string; provider: string }
-  | { kind: "done"; turn: number; reason: string };
+  | { kind: "done"; turn: number; reason: string }
+  | { kind: "title"; title: string }
+  | { kind: "block"; key: string; blockType: "reasoning" | "text" | "tool-call"; text?: string; name?: string; args?: string; callId?: string };
 
 export interface AssistantBlock {
   type: "reasoning" | "text" | "tool-call";
@@ -186,6 +189,45 @@ export class SessionTracer {
         return { kind: "turn", turn: Number(data.turn) };
       case "turn/end":
         return { kind: "done", turn: Number(data.turn), reason: String(data.reason?.kind ?? "completed") };
+      case "step/start":
+        return { kind: "step", turn: Number(data.turn), step: Number(data.step), active: true };
+      case "step/end":
+        return { kind: "step", turn: Number(data.turn), step: Number(data.step), active: false };
+      case "session/title": {
+        // DSH 生成的会话标题；fallback 标题（截断式）跳过，用 LLM 生成的
+        const sourceKind = String(data.source?.kind ?? "");
+        if (sourceKind === "fallback") return undefined;
+        const title = String(data.title ?? "").trim();
+        if (!title) return undefined;
+        return { kind: "title", title };
+      }
+      case "assistant/chunk": {
+        // 流式块事件：只消费 block-end（权威完整块），delta 碎片稀疏且与
+        // reasoning-chunks/text-chunks 重叠，避免双写
+        const chunk = data.chunk ?? {};
+        if (chunk.type !== "block-end") return undefined;
+        const key = `${data.turn ?? 0}:${data.step ?? 0}:${chunk.index ?? 0}`;
+        const block = chunk.block ?? {};
+        if (block.type === "reasoning") {
+          const text = String(block.text ?? "");
+          return text ? { kind: "block", key, blockType: "reasoning" as const, text } : undefined;
+        }
+        if (block.type === "text") {
+          const text = String(block.text ?? "");
+          return text ? { kind: "block", key, blockType: "text" as const, text } : undefined;
+        }
+        if (block.type === "tool-call") {
+          return {
+            kind: "block",
+            key,
+            blockType: "tool-call" as const,
+            name: String(block.name ?? "tool"),
+            args: summarizeArgs(block.arguments),
+            callId: String(block.id ?? ""),
+          };
+        }
+        return undefined;
+      }
       case "tool/call":
         return {
           kind: "tool",

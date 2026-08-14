@@ -23,6 +23,8 @@ export interface ChatSession {
   createdAt: number;
   updatedAt: number;
   messages: ChatMessage[];
+  /** DSH 生成的会话标题（session/title 事件）；存在时不再用首条消息截断覆盖。 */
+  dshTitle?: string;
 }
 
 export interface SessionSummary {

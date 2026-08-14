@@ -75,3 +75,58 @@ test("SessionTracer：找不到新会话文件时静默结束（不抛错）", a
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("SessionTracer：step/start-end、session/title、assistant/chunk block-end 归一化", async () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-tracer-"));
+  try {
+    const home = path.join(root, "home");
+    const sessionsDir = path.join(home, "sessions-vscode");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const tracer = new SessionTracer({ DSH_HOME: home }, Date.now());
+    const sessionDir = path.join(sessionsDir, "bucket", "session-test-2");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const log = path.join(sessionDir, "session.jsonl");
+
+    const lines = [
+      '{"type":"session","version":0,"id":"s2","createdAt":1,"cwd":"C:\\\\p","delegationDepth":0}',
+      '{"type":"turn/start","seq":0,"time":1,"data":{"turn":1}}',
+      '{"type":"step/start","seq":1,"time":2,"data":{"turn":1,"step":1}}',
+      // fallback 标题应被跳过
+      '{"type":"session/title","seq":2,"time":3,"data":{"title":"你在 VS Code 中通过 DSH","source":{"kind":"fallback"}}}',
+      // LLM 生成的标题应被接受
+      '{"type":"session/title","seq":3,"time":4,"data":{"title":"查看TEXT文件内容","source":{"kind":"model"}}}',
+      '{"type":"reasoning-chunks","seq":4,"time":5,"data":{"turn":1,"step":1,"index":0,"texts":["增量","碎片"]}}',
+      // block-end 权威块（reasoning + tool-call）
+      '{"type":"assistant/chunk","seq":5,"time":6,"data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"reasoning","text":"完整思考内容"}}}}',
+      '{"type":"assistant/chunk","seq":6,"time":7,"data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":1,"block":{"type":"tool-call","id":"call_x","name":"read","arguments":"{\\"file\\":\\"a.txt\\"}"}}}}',
+      '{"type":"step/end","seq":7,"time":8,"data":{"turn":1,"step":1}}',
+      '{"type":"turn/end","seq":8,"time":9,"data":{"turn":1,"reason":{"kind":"completed"}}}',
+    ];
+
+    const messages = [];
+    const signal = new AbortController().signal;
+    const runPromise = tracer.start((m) => messages.push(m), signal);
+    await sleep(400);
+    fs.writeFileSync(log, lines.join("\n") + "\n");
+    await sleep(350);
+    tracer.finish();
+    await runPromise;
+
+    assert.ok(messages.some((m) => m.kind === "step" && m.active === true && m.step === 1), "应收到 step/start");
+    assert.ok(messages.some((m) => m.kind === "step" && m.active === false && m.step === 1), "应收到 step/end");
+    const titles = messages.filter((m) => m.kind === "title");
+    assert.equal(titles.length, 1, "fallback 标题应被跳过，只收 LLM 标题");
+    assert.equal(titles[0].title, "查看TEXT文件内容");
+    const reasoningBlock = messages.find((m) => m.kind === "block" && m.blockType === "reasoning");
+    assert.ok(reasoningBlock, "应收到 reasoning block-end");
+    assert.equal(reasoningBlock.text, "完整思考内容");
+    assert.equal(reasoningBlock.key, "1:1:0");
+    const toolBlock = messages.find((m) => m.kind === "block" && m.blockType === "tool-call");
+    assert.ok(toolBlock, "应收到 tool-call block-end");
+    assert.equal(toolBlock.callId, "call_x");
+    assert.ok(toolBlock.args.includes("a.txt"), "tool-call block-end 应带参数");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
