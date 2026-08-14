@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "fs";
 import {
   FEATURED_PLUGINS,
   PluginInfo,
@@ -11,9 +12,17 @@ import {
   isInstalled,
   installSourceKind,
   githubShortToHttps,
+  profilePackageJsonPath,
 } from "./pluginManager";
 import { ResolvedCli } from "./cli";
 import { t } from "./i18n";
+import { checkPluginHeadless, HeadlessCheckResult } from "./headlessCheck";
+
+/** 插件中心免责声明（醒目、诚恳、严谨，防止第三方插件在 headless 下不生效引发纠纷）。 */
+const COMPAT_NOTICE = t(
+  `⚠️ 兼容性说明：DSH 插件生态基于官方 Web 端设计，本扩展通过 headless 命令行使用 DSH。插件能否在这里生效，取决于其实现——工具类插件通常可用；依赖 Web 界面、外部 API 或特定宿主的插件可能不生效。安装后扩展会自动检测插件「能否被 DSH 加载」并标注结果，但该检测只保证加载层面，不保证功能完全可用，也不代表官方支持。安装第三方插件前请自行评估来源可信度与使用风险。`,
+  `⚠️ Compatibility notice: the DSH plugin ecosystem is designed for the official Web client; this extension drives DSH through the headless CLI. Whether a plugin works here depends on its implementation — tool plugins usually do, while plugins relying on Web UI, external APIs, or specific hosts may not. After install, the extension auto-checks whether the plugin loads and labels the result, but that check only covers the loading layer — it does not guarantee full functionality, nor is it an official endorsement. Please evaluate the trustworthiness and risk of third-party plugins yourself.`
+);
 
 /** 携带自定义负载的 QuickPick 项（action / packageName 不是标准字段，用接口扩展）。 */
 interface PluginPickItem extends vscode.QuickPickItem {
@@ -40,6 +49,7 @@ async function showPluginBrowser(cli: ResolvedCli): Promise<void> {
 
   const pick = await vscode.window.showQuickPick(
     [
+      { label: "$(info) " + t("⚠️ 兼容性说明（重要，请阅读）", "⚠️ Compatibility notice (important, please read)"), description: t("第三方插件与 headless 的适配边界", "How third-party plugins fit the headless CLI"), action: "compat-notice" },
       // 操作入口放最顶部，避免被列表淹没
       { label: "$(cloud-download) " + t("从来源安装…", "Install from source…"), description: t("npm 包名 / GitHub 仓库 / git URL / 本地路径", "npm package / GitHub repo / git URL / local path"), action: "install-source" },
       { label: "$(refresh) " + t("刷新列表", "Refresh"), description: t("重新读取 headless profile 已装插件", "Reload installed plugins from the headless profile"), action: "refresh" },
@@ -61,6 +71,11 @@ async function showPluginBrowser(cli: ResolvedCli): Promise<void> {
   const pkg = pick.packageName as string | undefined;
 
   if (action === "refresh") {
+    await showPluginBrowser(cli);
+    return;
+  }
+  if (action === "compat-notice") {
+    void vscode.window.showWarningMessage(COMPAT_NOTICE, { modal: true });
     await showPluginBrowser(cli);
     return;
   }
@@ -100,6 +115,7 @@ async function showPluginActions(cli: ResolvedCli, packageName: string, installe
   ];
   if (inst) {
     actions.push({ label: "$(trash) " + t("卸载", "Uninstall"), description: inst.active ? t("从 profile 移除并停用", "Remove and deactivate from profile") : t("从依赖移除", "Remove from dependencies"), action: "rm" });
+    actions.push({ label: "$(beaker) " + t("检测兼容性", "Check headless compatibility"), description: t("用 DSH 运行时验证加载情况", "Verify loading via the DSH runtime"), action: "check" });
   } else {
     actions.push({
       label: "$(cloud-download) " + t("安装", "Install"),
@@ -130,7 +146,39 @@ async function showPluginActions(cli: ResolvedCli, packageName: string, installe
   }
   if (action === "rm") {
     await uninstallPlugin(cli, packageName);
+    return;
   }
+  if (action === "check") {
+    await runCompatibilityCheck(cli, packageName);
+    await showPluginActions(cli, packageName, installed);
+  }
+}
+
+/** 手动执行 headless 兼容性检测并展示结果（含边界说明）。 */
+async function runCompatibilityCheck(cli: ResolvedCli, packageName: string): Promise<void> {
+  const check = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: t("正在检测 {0} 的 headless 兼容性…", "Checking headless compatibility of {0}…").replace("{0}", packageName) },
+    () => checkPluginHeadless(cli, packageName)
+  );
+  const label = compatCheckLabel(check);
+  const body =
+    check.level === "ok"
+      ? t(
+          `✅ ${packageName} 已加载，且其配置补丁在 headless profile 中生效。注意：这仅证明「能加载」，不代表所有功能都可用——依赖外部 API 或 UI 组件的功能仍需自行验证。`,
+          `✅ ${packageName} is loaded and its config patch is active in the headless profile. Note: this only proves it "loads" — features depending on external APIs or UI components still need your own verification.`
+        )
+      : check.level === "warning"
+      ? t(
+          `⚠️ ${packageName} 已加载，但其补丁引用了 ${check.missingEntries.length} 个缺失插件行，部分功能可能不生效。`,
+          `⚠️ ${packageName} is loaded, but its patch references ${check.missingEntries.length} missing plugin row(s) — some features may not work.`
+        )
+      : check.level === "inactive"
+      ? t(
+          `⚪ ${packageName} 仅作为普通依赖安装（未声明 dsh.bundle.patch），headless profile 不会加载它。`,
+          `⚪ ${packageName} is installed as a plain dependency only (no dsh.bundle.patch), so the headless profile does not load it.`
+        )
+      : t(`❌ 检测未能完成：${check.summary}`, `❌ The check could not complete: ${check.summary}`);
+  void vscode.window.showInformationMessage(label + "\n\n" + body, { modal: true });
 }
 
 /** 从任意来源安装插件：npm 包名 / GitHub 仓库 / git URL / 本地路径。 */
@@ -183,35 +231,71 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
 
   const confirm = await vscode.window.showWarningMessage(
     t(
-      `将从「${kindLabel}」安装 ${finalSource} 到 headless profile。继续？`,
-      `Install ${finalSource} from "${kindLabel}" into the headless profile? Continue?`
+      `将从「${kindLabel}」安装 ${finalSource} 到 headless profile。⚠️ 第三方插件可能包含仅适用于官方 Web 端的组件，在 headless 下可能不生效；安装后扩展会自动检测并提示。继续？`,
+      `Install ${finalSource} from "${kindLabel}" into the headless profile? ⚠️ Third-party plugins may contain components for the official Web client only, which may not work under headless; the extension will auto-check and report after install. Continue?`
     ),
     { modal: true },
     t("安装", "Install")
   );
   if (confirm !== t("安装", "Install")) return;
 
-  const progress = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", finalSource) },
-    async () => runPluginCommand(cli, "add", finalSource)
+  const { res, check } = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: t("正在安装并检测 {0}…", "Installing & checking {0}…").replace("{0}", finalSource) },
+    async () => {
+      const r = await runPluginCommand(cli, "add", finalSource);
+      if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
+      const c = await checkPluginHeadless(cli, installedNameForSpec(finalSource));
+      return { res: r, check: c };
+    }
   );
-  notifyPluginResult(cli, finalSource, progress);
+  notifyPluginResult(cli, finalSource, res, check);
+}
+
+/** 兼容性检测结果的简短标签（双语）。 */
+function compatCheckLabel(check: HeadlessCheckResult): string {
+  switch (check.level) {
+    case "ok":
+      return t("✅ 兼容性检测：已加载并生效", "✅ Compatibility: loaded & active");
+    case "warning":
+      return t("⚠️ 兼容性检测：已加载但有警告（部分可能不生效）", "⚠️ Compatibility: loaded with warnings (some parts may not work)");
+    case "inactive":
+      return t("⚪ 兼容性检测：仅安装未激活", "⚪ Compatibility: installed, inactive");
+    default:
+      return t("❌ 兼容性检测失败", "❌ Compatibility check failed");
+  }
+}
+
+/** 通过依赖 spec（URL / github 短名 / 本地路径）反查 profile 里真实的包名，
+ * 供兼容性检测匹配 dump-config 的 `# == <包名>` 来源块。 */
+function installedNameForSpec(spec: string): string {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(profilePackageJsonPath(), "utf8"));
+    const deps = pkg.dependencies ?? {};
+    for (const [name, s] of Object.entries(deps)) {
+      if (String(s) === spec || String(s).includes(spec) || spec.includes(name)) return name;
+    }
+  } catch {
+    /* ignore */
+  }
+  return spec;
 }
 
 /** 展示插件操作结果。可靠性策略：
- * 1) 状态栏消息（12s）——不依赖通知系统，必定可见；
- * 2) 成功弹带「查看插件中心」按钮的通知（带按钮不自动消失），失败弹错误通知。 */
-function notifyPluginResult(cli: ResolvedCli, pkg: string, res: PluginCommandResult): void {
+ * 1) 状态栏消息（15s）——不依赖通知系统，必定可见；
+ * 2) 成功弹带「查看插件中心」按钮的通知（带按钮不自动消失），失败弹错误通知；
+ * 3) 若提供了 headless 检测结果，附加一行兼容性标签。 */
+function notifyPluginResult(cli: ResolvedCli, pkg: string, res: PluginCommandResult, check?: HeadlessCheckResult): void {
   const text = localizePluginResult(pkg, res);
-  vscode.window.setStatusBarMessage(text, 12000);
+  const suffix = check ? `\n${compatCheckLabel(check)}` : "";
+  vscode.window.setStatusBarMessage(text + (check ? ` · ${compatCheckLabel(check)}` : ""), 15000);
   if (res.ok) {
-    void vscode.window.showInformationMessage(text, t("查看插件中心", "Open Plugin Center")).then((pick) => {
+    void vscode.window.showInformationMessage(text + suffix, t("查看插件中心", "Open Plugin Center")).then((pick) => {
       if (pick === t("查看插件中心", "Open Plugin Center")) {
         void showPluginBrowser(cli);
       }
     });
   } else {
-    void vscode.window.showErrorMessage(text);
+    void vscode.window.showErrorMessage(text + suffix);
   }
 }
 
@@ -266,18 +350,23 @@ function localizePluginResult(pkg: string, res: { ok: boolean; message: string; 
 async function installPlugin(cli: ResolvedCli, packageName: string): Promise<void> {
   const confirm = await vscode.window.showWarningMessage(
     t(
-      `将安装插件 ${packageName} 到 headless profile（~/.dsh/profiles/headless）。安装后需重载窗口使新工具生效。继续？`,
-      `Install plugin ${packageName} into the headless profile (~/.dsh/profiles/headless)? Reload the window after install for new tools to take effect. Continue?`
+      `将安装插件 ${packageName} 到 headless profile（~/.dsh/profiles/headless）。⚠️ 第三方插件可能包含仅适用于官方 Web 端的组件，在 headless 下可能不生效；安装后扩展会自动检测并提示。继续？`,
+      `Install plugin ${packageName} into the headless profile (~/.dsh/profiles/headless)? ⚠️ Third-party plugins may contain components for the official Web client only, which may not work under headless; the extension will auto-check and report after install. Continue?`
     ),
     { modal: true },
     t("安装", "Install")
   );
   if (confirm !== t("安装", "Install")) return;
-  const progress = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: t("正在安装 {0}…", "Installing {0}…").replace("{0}", packageName) },
-    async () => runPluginCommand(cli, "add", packageName)
+  const { res, check } = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: t("正在安装并检测 {0}…", "Installing & checking {0}…").replace("{0}", packageName) },
+    async () => {
+      const r = await runPluginCommand(cli, "add", packageName);
+      if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
+      const c = await checkPluginHeadless(cli, packageName);
+      return { res: r, check: c };
+    }
   );
-  notifyPluginResult(cli, packageName, progress);
+  notifyPluginResult(cli, packageName, res, check);
 }
 
 async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<void> {
