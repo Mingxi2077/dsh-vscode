@@ -194,19 +194,15 @@ export function runPluginCommand(
       child.kill();
       resolve({ ok: false, message: `plugin command timed out (${packageName})` });
     }, 180000);
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", (err) => {
+    // 等两个输出流都 end 再处理，避免 close 时 stdout 缓冲未刷完导致解析不到错误信息
+    let outDone = false;
+    let errDone = false;
+    let settled = false;
+    const finish = () => {
+      if (!outDone || !errDone || settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve({ ok: false, message: `spawn failed: ${err.message}` });
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
+      if (codeRef === 0) {
         const active = action === "add" ? isActive(packageName) : undefined;
         const detail = stdout.trim().split(/\r?\n/).filter((l) => l.includes("bundle") || l.includes("warning")).join(" ");
         const suffix = detail ? ` (${detail.slice(0, 120)})` : "";
@@ -215,8 +211,8 @@ export function runPluginCommand(
           active,
           message: action === "add" ? `installed ${packageName}${suffix}` : `removed ${packageName}`,
         });
-      } else if (action === "add" && retryCount < 2 && /onlyBuiltDependencies|needs to execute build scripts|git-hosted plugins build on install/.test(stderr + "\n" + stdout)) {
-        // git/URL 插件需要 build 许可：解析包名 → 加入允许列表 → 重试
+      } else if (action === "add" && retryCount < 2 && /ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED|needs to execute build scripts but is not in the "onlyBuiltDependencies"/.test(stdout)) {
+        // git/URL 插件需要 build 许可（pnpm 真实错误在 stdout）：解析包名 → 加入允许列表 → 重试
         const names = extractBuiltAllowNames(stdout + "\n" + stderr);
         if (names.length > 0) {
           const allowed = names.every((n) => allowBuildScripts(n));
@@ -232,11 +228,40 @@ export function runPluginCommand(
             `could not extract the package name from the error. Try installing again, or check the DSH output panel.`,
         });
       } else {
+        // 非 build 许可错误：过滤 DSH 的通用提示行（避免误导），保留真实错误
+        const realErr = (stderr + "\n" + stdout)
+          .split(/\r?\n/)
+          .filter((l) => !l.includes("git-hosted plugins build on install") && !l.includes("add the exact key pnpm printed"))
+          .join("\n")
+          .trim();
         resolve({
           ok: false,
-          message: `${action === "add" ? "install" : "remove"} ${packageName} failed (exit ${code}): ${stderr.trim().slice(0, 300) || stdout.trim().slice(0, 300)}`,
+          message: `${action === "add" ? "install" : "remove"} ${packageName} failed (exit ${codeRef}): ${realErr.slice(0, 300)}`,
         });
       }
+    };
+    let codeRef: number | null = null;
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stdout.on("end", () => {
+      outDone = true;
+      finish();
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.stderr.on("end", () => {
+      errDone = true;
+      finish();
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolve({ ok: false, message: `spawn failed: ${err.message}` });
+    });
+    child.on("close", (code) => {
+      codeRef = code;
+      finish();
     });
   });
 }

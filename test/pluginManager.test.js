@@ -10,6 +10,7 @@ const {
   isActive,
   installSourceKind,
   allowBuildScripts,
+  extractBuiltAllowNames,
   pnpmWorkspacePath,
 } = require("../out/pluginManager.js");
 
@@ -130,4 +131,14 @@ test("allowBuildScripts：写入 onlyBuiltDependencies 且幂等", () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("extractBuiltAllowNames：从真实 pnpm 错误提取包名", () => {
+  const { extractBuiltAllowNames } = require("../out/pluginManager.js");
+  // 真实 build 许可错误（stdout）
+  const buildErr = `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED Failed to prepare git-hosted package fetched from "https://codeload.github.com/omdsh-dev/dsh-toolkit/tar.gz/x": The git-hosted package "@deepseek-ai/dsh-toolkit@0.0.1" needs to execute build scripts but is not in the "onlyBuiltDependencies" allowlist.`;
+  const names = extractBuiltAllowNames(buildErr);
+  assert.ok(names.includes("@deepseek-ai/dsh-toolkit"), "应提取 scoped 包名");
+  // 无 build 错误时返回空（避免误判）
+  assert.deepEqual(extractBuiltAllowNames("dsh: git-hosted plugins build on install via their prepare script"), []);
 });
