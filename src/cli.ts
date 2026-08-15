@@ -99,6 +99,25 @@ function entryForShim(shim: string): string {
   return path.join(path.dirname(shim), ENTRY_REL);
 }
 
+/** 依次问 npm/pnpm 的全局根，找标准布局下的 dsh 入口。 */
+async function findGlobalEntry(): Promise<string | undefined> {
+  const tools = process.platform === "win32" ? ["npm.cmd", "pnpm.cmd", "yarn.cmd"] : ["npm", "pnpm", "yarn"];
+  for (const tool of tools) {
+    const root = await firstLine(tool, ["root", "-g"]);
+    if (root) {
+      const entry = path.join(root.trim(), ENTRY_REL);
+      if (fs.existsSync(entry)) return entry;
+    }
+  }
+  return undefined;
+}
+
+/** 归一化 extraArgs：settings.json 手填成字符串/数字/对象时不让扩展崩掉。 */
+export function normalizeExtraArgs(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === "string");
+}
+
 /** 把任务文本限制在平台可接受的命令行长度内（Windows CreateProcess 上限约 32k）。 */
 export function capTaskText(
   task: string,
@@ -119,20 +138,33 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
     if (!fs.existsSync(p)) {
       throw new Error(tf(t("配置的 dsh-harness-vscode.cliPath 不存在：{0}", "Configured dsh-harness-vscode.cliPath does not exist: {0}"), p));
     }
+    let stat: fs.Stats | undefined;
+    try {
+      stat = fs.statSync(p);
+    } catch {
+      // stat 失败（权限等）继续走后面逻辑，由 spawn 给出具体错误
+    }
+    if (stat?.isDirectory()) {
+      throw new Error(tf(t("配置的 dsh-harness-vscode.cliPath 是目录而不是文件：{0}", "Configured dsh-harness-vscode.cliPath is a directory, not a file: {0}"), p));
+    }
     if (p.toLowerCase().endsWith(".js")) {
       return { kind: "entry", node: await resolveNodeBinary(), entry: p, source: "配置(dsh-harness-vscode.cliPath)" };
     }
     if (isShimLike(p)) {
       // .cmd/.bat/.ps1 不能直接 spawn（EINVAL），从同目录解析真实入口；
-      // 解析不到时给出明确指引，避免把 shim 交给 spawn 后必然失败。
+      // 同目录没有时再问 npm/pnpm 全局根；都找不到才给明确指引。
       const entry = entryForShim(p);
       if (fs.existsSync(entry)) {
         return { kind: "entry", node: await resolveNodeBinary(), entry, source: `配置 shim 解析(${p})` };
       }
+      const globalEntry = await findGlobalEntry();
+      if (globalEntry) {
+        return { kind: "entry", node: await resolveNodeBinary(), entry: globalEntry, source: `配置 shim 全局解析(${p})` };
+      }
       throw new Error(
         t(
-          `dsh-harness-vscode.cliPath 指向了 shim（${p}），但同目录找不到 ${entry}。请把 cliPath 配成该 lib/bin.js 文件。`,
-          `dsh-harness-vscode.cliPath points to a shim (${p}), but ${entry} was not found next to it. Point cliPath to that lib/bin.js file instead.`
+          `dsh-harness-vscode.cliPath 指向了 shim（${p}），但同目录和 npm/pnpm 全局根都找不到 ${ENTRY_REL}。请把 cliPath 配成该 lib/bin.js 文件。`,
+          `dsh-harness-vscode.cliPath points to a shim (${p}), but ${ENTRY_REL} was not found next to it or in the npm/pnpm global root. Point cliPath to that lib/bin.js file instead.`
         )
       );
     }
@@ -155,12 +187,9 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
       }
     }
     // 兜底：pnpm 全局等非标准布局下 where 拿不到或 shim 无法解析入口，尝试常见全局位置。
-    const npmRoot = await firstLine("npm.cmd", ["root", "-g"]);
-    if (npmRoot) {
-      const entry = path.join(npmRoot.trim(), ENTRY_REL);
-      if (fs.existsSync(entry)) {
-        return { kind: "entry", node: await resolveNodeBinary(), entry, source: "npm root -g 解析" };
-      }
+    const globalEntry = await findGlobalEntry();
+    if (globalEntry) {
+      return { kind: "entry", node: await resolveNodeBinary(), entry: globalEntry, source: "全局包根解析" };
     }
   } else {
     const found = await firstLine("which", ["dsh"]);

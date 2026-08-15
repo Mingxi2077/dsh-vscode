@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { buildSpawnArgs, capTaskText, resolveCli } = require("../out/cli.js");
+const { buildSpawnArgs, capTaskText, resolveCli, normalizeExtraArgs } = require("../out/cli.js");
 
 test("entry 模式：--expose-internals + 入口 + launcher 参数 + 任务文本（不含 node 自身）", () => {
   const args = buildSpawnArgs(
@@ -39,6 +39,12 @@ test("extraArgs 为空时不产生额外参数（entry 模式仍带 expose-inter
     "hi"
   );
   assert.deepEqual(args, ["--expose-internals", "e.js", "--profile", "headless", "hi"]);
+});
+
+test("normalizeExtraArgs：settings.json 手填成字符串/混入数字时安全归一化", () => {
+  assert.deepEqual(normalizeExtraArgs(["--patch", "x.yml", 1, null]), ["--patch", "x.yml"]);
+  assert.deepEqual(normalizeExtraArgs("--patch"), []);
+  assert.deepEqual(normalizeExtraArgs(undefined), []);
 });
 
 test("capTaskText：win32 超长任务文本被截断并标记（防 Windows 命令行 32k 限制）", () => {

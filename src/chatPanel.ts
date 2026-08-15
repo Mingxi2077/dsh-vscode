@@ -1,7 +1,7 @@
 import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
-import { ResolvedCli, buildSpawnArgs, runDsh } from "./cli";
+import { ResolvedCli, buildSpawnArgs, runDsh, normalizeExtraArgs } from "./cli";
 import { ChatMessage, ChatSession, SessionStore, stableHash, TraceBlock } from "./sessionStore";
 import { ProjectMemory } from "./memory";
 import { SessionTracer, ProgressMessage } from "./sessionTracer";
@@ -23,6 +23,7 @@ import {
 } from "./modelSelection";
 import { refreshSidebarStatus } from "./sidebar";
 import { resolveExistingInsideRoot } from "./pathSafety";
+import { isAnyTaskActive, setTaskActive } from "./taskGuard";
 import { t, tf, isZh } from "./i18n";
 
 /** 用户在输入区上方挂载的上下文块（选中代码 / 文件片段）。 */
@@ -446,14 +447,17 @@ export class ChatPanel {
   private async sendMessage(text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed) return;
-    if (this.running || this.busy) {
+    const participantBusy = !this.running && !this.busy && isAnyTaskActive();
+    if (this.running || this.busy || participantBusy) {
       // 韧性：不能让用户输入被静默吞掉——回显原因并恢复草稿
       this.post({
         type: "appendMessage",
         message: this.systemMessage(
           this.running
             ? t("已有任务运行中，请等待完成或先取消。", "A task is already running; wait for it or cancel it first.")
-            : t("后台任务（如 /compact）进行中，请稍候再发送。", "A background task (e.g. /compact) is running; please wait before sending.")
+            : this.busy
+              ? t("后台任务（如 /compact）进行中，请稍候再发送。", "A background task (e.g. /compact) is running; please wait before sending.")
+              : t("DSH 正在执行其它任务（自检/环境检查/插件操作等），请稍候再发送。", "DSH is busy with another operation (self-test / environment check / plugin action); please wait before sending.")
         ),
       });
       this.post({ type: "setDraft", text });
@@ -473,6 +477,7 @@ export class ChatPanel {
 
     this.running = true;
     this.abort = new AbortController();
+    setTaskActive("panel", true);
     this.postIfCurrent(taskSession, { type: "running", running: true });
     this.postIfCurrent(taskSession, { type: "sessionChanged", sessionId: taskSession.id, title: taskSession.title });
     this.status.setRunning(true);
@@ -487,6 +492,7 @@ export class ChatPanel {
       // 状态栏是全局单例：若旧面板已关闭并已有新面板在跑任务，旧任务不能把新任务的运行态抹掉。
       this.running = false;
       this.abort = undefined;
+      setTaskActive("panel", this.busy);
       this.post({ type: "running", running: false });
       if (ChatPanel.current() === this || !ChatPanel.current()) {
         this.status.setRunning(false);
@@ -510,10 +516,14 @@ export class ChatPanel {
     let modelPatch: string | undefined;
     try {
       const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-      extraArgs = [...(cfg.get<string[]>("extraArgs", []) ?? [])];
-      timeoutSec = cfg.get<number>("timeoutSeconds", 600);
-      streamProgress = cfg.get<boolean>("streamProgress", true);
-      debugStreaming = cfg.get<boolean>("debugStreaming", false);
+      extraArgs = normalizeExtraArgs(cfg.get("extraArgs", []));
+      // settings.json 可以绕过 UI 的 min/max：运行期再按配置声明夹紧一次
+      const rawTimeout = cfg.get<number>("timeoutSeconds", 600);
+      timeoutSec = Number.isFinite(rawTimeout) ? Math.min(7200, Math.max(30, rawTimeout)) : 600;
+      const rawStream = cfg.get<unknown>("streamProgress", true);
+      streamProgress = typeof rawStream === "boolean" ? rawStream : rawStream !== "false";
+      const rawDebug = cfg.get<unknown>("debugStreaming", false);
+      debugStreaming = typeof rawDebug === "boolean" ? rawDebug : rawDebug === "true";
       folderPath = this.folder.uri.fsPath;
       folderHash = this.folderHash;
       selection = this.selection;
@@ -751,9 +761,10 @@ export class ChatPanel {
 
   /** 跑一次不落聊天记录的一次性任务（用于 /compact）。 */
   async runHeadlessTask(task: string): Promise<string | null> {
-    // 并发守卫：主任务或另一个后台任务运行时不再启动新的 dsh 子进程
-    if (this.running || this.busy) return null;
+    // 并发守卫：主任务、另一个后台任务或 @dsh-agent 运行时不再启动新的 dsh 子进程
+    if (this.running || this.busy || isAnyTaskActive()) return null;
     this.busy = true;
+    setTaskActive("panel", true);
     this.post({ type: "busy", busy: true });
     const abort = new AbortController();
     this.backgroundAbort = abort;
@@ -773,7 +784,7 @@ export class ChatPanel {
     try {
       const cli = await this.cliProvider();
       const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-      const extraArgs = [...(cfg.get<string[]>("extraArgs", []) ?? [])];
+      const extraArgs = normalizeExtraArgs(cfg.get("extraArgs", []));
       extraArgs.push("--patch", path.join(this.extensionPath, "patch", "stream.patch.yml"));
       if (modelPatch) extraArgs.push("--patch", modelPatch);
       const args = buildSpawnArgs(cli, extraArgs, task);
@@ -795,6 +806,7 @@ export class ChatPanel {
       clearTimeout(timer);
       if (this.backgroundAbort === abort) this.backgroundAbort = undefined;
       this.busy = false;
+      setTaskActive("panel", this.running);
       this.post({ type: "busy", busy: false });
     }
   }
@@ -898,8 +910,11 @@ export class ChatPanel {
     enabledSkills: string[]
   ): string {
     const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-    const historyN = cfg.get<number>("historyMessages", 20);
-    const maxChars = cfg.get<number>("maxMessageChars", 8000);
+    const rawHistory = cfg.get<number>("historyMessages", 20);
+    const rawMax = cfg.get<number>("maxMessageChars", 8000);
+    // 与 package.json 的 minimum/maximum 对齐，防 settings.json 手填负值/超大值
+    const historyN = Number.isFinite(rawHistory) ? Math.min(100, Math.max(0, Math.floor(rawHistory))) : 20;
+    const maxChars = Number.isFinite(rawMax) ? Math.min(100000, Math.max(500, Math.floor(rawMax))) : 8000;
 
     const extraSections: string[] = [];
     const sel = selection;
@@ -941,7 +956,12 @@ export class ChatPanel {
   private insertCodeFromMessage(messageId: string): void {
     const msg = this.session.messages.find((m) => m.id === messageId);
     if (!msg) return;
-    insertCodeToEditor(extractCodeForInsert(msg.content));
+    const code = extractCodeForInsert(msg.content);
+    if (!code) {
+      void vscode.window.showWarningMessage(t("这条回答里没有代码块，无法插入代码。", "This answer has no code block to insert."));
+      return;
+    }
+    insertCodeToEditor(code);
   }
 
   /** 把回答中的代码块写入项目文件（带路径猜测与确认）。 */

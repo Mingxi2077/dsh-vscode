@@ -10,10 +10,12 @@ import { writeModelPatch, loadSelection, readCustomProviders, catalogProviderByI
 import { settingsPath } from "./settingsEditor";
 import { stableHash } from "./sessionStore";
 import { registerChatParticipant } from "./chatParticipant";
+import { isAnyTaskActive, setTaskActive } from "./taskGuard";
 import { registerSidebarView } from "./sidebar";
 import { openPluginCenter, pluginStatusSummary } from "./pluginCenter";
 import { openPresetCenter, presetStatusSummary } from "./presetCenter";
 import { PluginWatch } from "./pluginWatch";
+import { runDumpConfig } from "./headlessCheck";
 import { t, tf, setUiLanguage } from "./i18n";
 import { setDshHome, dshHome, dshHomePath } from "./dshHome";
 
@@ -41,10 +43,16 @@ function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEn
     const extraEnv: Record<string, string> = {};
     if (rawEnv && typeof rawEnv === "object") {
       for (const [k, v] of Object.entries(rawEnv)) {
-        if (v !== null && v !== undefined) extraEnv[k] = String(v);
+        // 空值按未设置处理；只接受合法环境变量名，防止非法键把 spawn 撑崩
+        if (v === null || v === undefined || String(v).length === 0) continue;
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+        extraEnv[k] = String(v);
       }
     }
-    const permissionMode = cfg.get<string>("permissionMode", "workspace-write");
+    const rawPermissionMode = cfg.get<string>("permissionMode", "workspace-write");
+    const permissionMode = ["read-only", "workspace-write", "danger-full-access"].includes(rawPermissionMode)
+      ? rawPermissionMode
+      : "workspace-write";
     const env: NodeJS.ProcessEnv = { ...process.env };
     // 注入所有用户通过扩展保存的 API Key（环境里已有的以环境为准）
     const stored = await secrets.envSecrets();
@@ -69,19 +77,19 @@ function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEn
 }
 
 /** 检测 DEEPSEEK_API_KEY 是否可用（不打印内容）。 */
-async function apiKeyStatus(secrets: SecretStore): Promise<string> {
+async function apiKeyStatus(secrets: SecretStore): Promise<{ text: string; configured: boolean }> {
   const secret = await secrets.get("DEEPSEEK_API_KEY");
-  if (secret) return t("已配置（系统密钥链）", "configured (system keychain)");
-  if (process.env.DEEPSEEK_API_KEY) return t("已配置（环境变量 DEEPSEEK_API_KEY）", "configured (env DEEPSEEK_API_KEY)");
+  if (secret) return { text: t("已配置（系统密钥链）", "configured (system keychain)"), configured: true };
+  if (process.env.DEEPSEEK_API_KEY) return { text: t("已配置（环境变量 DEEPSEEK_API_KEY）", "configured (env DEEPSEEK_API_KEY)"), configured: true };
   // 与子进程的 DSH_HOME 保持一致：用户配置了自定义 DSH_HOME 时凭据也在那里
   const credFile = dshHomePath(".credentials.yaml");
   try {
     const raw = fs.readFileSync(credFile, "utf8");
-    if (/DEEPSEEK_API_KEY\s*:/.test(raw)) return t("已配置（{0}）", "configured ({0})").replace("{0}", credFile);
+    if (/DEEPSEEK_API_KEY\s*:/.test(raw)) return { text: t("已配置（{0}）", "configured ({0})").replace("{0}", credFile), configured: true };
   } catch {
     // 文件不存在或不可读，按未配置处理
   }
-  return t("未配置 → 请运行「DSH: 配置 API Key」", "not set → run \"DSH: Set API Key\"");
+  return { text: t("未配置 → 请运行「DSH: 配置 API Key」", "not set → run \"DSH: Set API Key\""), configured: false };
 }
 
 /** 状态栏控制器：运行中指示 + 就绪状态。 */
@@ -129,7 +137,8 @@ function createCliProvider(): () => Promise<ResolvedCli> {
   const provider = async (): Promise<ResolvedCli> => {
     if (!cache) {
       const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-      let cliPath = cfg.get<string>("cliPath", "");
+      const rawCliPath = cfg.get<string>("cliPath", "");
+      let cliPath = typeof rawCliPath === "string" ? rawCliPath : "";
       // 相对路径按第一个工作区目录解析（与用户直觉一致；无工作区时保持原样由 resolveCli 报错）
       if (cliPath && !path.isAbsolute(cliPath)) {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -268,7 +277,8 @@ async function openChatWithDraft(
 /** 从设置读取 DSH_HOME 并同步给 dshHome 模块（相对路径按工作区根解析）。 */
 function syncDshHomeFromConfig(): void {
   const raw = vscode.workspace.getConfiguration("dsh-harness-vscode").get<Record<string, string>>("environment", {});
-  const home = raw?.DSH_HOME;
+  const rawHome = raw?.DSH_HOME;
+  const home = typeof rawHome === "string" ? rawHome : undefined;
   if (home && !path.isAbsolute(home)) {
     const base = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
     setDshHome(path.resolve(base, home));
@@ -326,7 +336,7 @@ export function activate(context: vscode.ExtensionContext): void {
       void openPluginCenter(cliProvider, context);
       void (async () => {
         try {
-          await pluginWatch.checkOnce(await cliProvider());
+          await pluginWatch.checkOnce(await cliProvider(), true);
         } catch {
           // 检测失败不阻塞插件中心
         }
@@ -398,6 +408,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // 环境自检：普通用户装完第一步就运行它
     vscode.commands.registerCommand("dsh-harness-vscode.checkEnvironment", async () => {
+      if (isAnyTaskActive()) {
+        void vscode.window.showInformationMessage(
+          t("有任务正在运行，请先等待完成或取消，再执行环境检查。", "A task is running. Wait for it or cancel it before running the environment check.")
+        );
+        return;
+      }
+      setTaskActive("envcheck", true);
+      try {
       output.clear();
       output.appendLine(t("DSH 环境检查", "DSH Environment Check"));
       output.appendLine("==============");
@@ -408,12 +426,41 @@ export function activate(context: vscode.ExtensionContext): void {
         const version = await runCliVersion(cli);
         output.appendLine(t("版本: {0}", "version: {0}").replace("{0}", version || t("未知", "unknown")));
         const key = await apiKeyStatus(secrets);
-        output.appendLine(`API Key: ${key}`);
+        output.appendLine(`API Key: ${key.text}`);
         const permMode = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
         output.appendLine(t("沙箱模式: {0}（无交互 headless 下审批失败关闭，无法自我越权）", "sandbox: {0} (headless has no interactive answerer, so approvals fail closed)").replace("{0}", permMode));
         if (permMode === "danger-full-access") {
           void vscode.window.showWarningMessage(t("⚠ 沙箱模式为 danger-full-access：dsh 将不受限操作且审批自动放行，请确保任务可信。", "⚠ Sandbox is danger-full-access: dsh operates unrestricted with auto-approval. Only if you fully trust the task."));
         }
+
+        // headless 配置树预检：能尽早发现“profile 引用了已删除插件”这类问题
+        let dumpOk = true;
+        output.appendLine("");
+        output.appendLine(t("headless 配置树：", "headless config tree:"));
+        try {
+          const dump = await runDumpConfig(cli, 20000);
+          if (dump.timedOut || dump.exitCode !== 0) {
+            dumpOk = false;
+            output.appendLine(`  ${t("✗ dump-config 失败", "✗ dump-config failed")}${dump.timedOut ? t("（超时）", " (timed out)") : dump.exitCode !== null ? ` (exit ${dump.exitCode})` : ""}`);
+            const brokenBundle = dump.stderr.match(/cannot resolve profile bundle "([^"]+)"/)?.[1];
+            if (brokenBundle) {
+              output.appendLine(
+                t(
+                  "  ⚠️ headless profile 引用了缺失的插件包：{0}。请在插件中心卸载它，或运行 dsh plugin --profile headless rm {0}。",
+                  "  ⚠️ The headless profile references a missing plugin package: {0}. Uninstall it in the Plugin Center, or run dsh plugin --profile headless rm {0}."
+                ).replaceAll("{0}", brokenBundle)
+              );
+            }
+            if (dump.stderr.trim()) output.appendLine(`  stderr: ${dump.stderr.trim().slice(0, 400)}`);
+          } else {
+            output.appendLine(t("  ✓ dump-config 成功", "  ✓ dump-config succeeded"));
+          }
+        } catch (err) {
+          dumpOk = false;
+          const message = err instanceof Error ? err.message : String(err);
+          output.appendLine(t("  ✗ dump-config 异常：{0}", "  ✗ dump-config error: {0}").replace("{0}", message));
+        }
+
         output.appendLine("");
         output.appendLine(t("Provider 配置检查：", "Provider config check:"));
         output.appendLine(`  settings.yaml: ${settingsPath()}`);
@@ -426,10 +473,20 @@ export function activate(context: vscode.ExtensionContext): void {
         output.appendLine(t("模式预设：", "mode presets:"));
         for (const line of presetStatusSummary()) output.appendLine(`  ${line}`);
         output.appendLine("");
-        output.appendLine(t("检查通过。打开项目后执行「DSH: 打开对话」即可开始。", "Check passed. Open a project and run \"DSH: Open Chat\" to start."));
+        const envOk = dumpOk;
+        const ready = envOk && key.configured;
+        output.appendLine(
+          ready
+            ? t("检查通过。打开项目后执行「DSH: 打开对话」即可开始。", "Check passed. Open a project and run \"DSH: Open Chat\" to start.")
+            : envOk
+              ? t("环境正常，但尚未配置 API Key。请执行「DSH: 配置 API Key」。", "Environment OK, but no API key is configured yet. Run \"DSH: Set API Key\".")
+              : t("检查发现问题，请根据上方 ✗/⚠️ 项处理。", "Issues found; fix the ✗/⚠️ items above.")
+        );
         output.show(true);
-        status.setReady(true, `DSH ${version} ` + t("已就绪", "ready"));
-        void vscode.window.showInformationMessage(`DSH ${version} ` + t("已就绪", "ready") + ` (API Key ${key.startsWith(t("已配置", "configured")) ? "✓" : "✗"})`);
+        status.setReady(ready, ready ? `DSH ${version} ` + t("已就绪", "ready") : "DSH: " + (envOk ? t("API Key 未配置", "API key not set") : t("环境异常", "environment issue")));
+        void vscode.window.showInformationMessage(
+          `${ready ? `DSH ${version} ` + t("已就绪", "ready") : t("DSH 环境检查完成（有未完成项）", "DSH environment check finished (with open items)")} (API Key ${key.configured ? "✓" : "✗"})`
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         output.appendLine(t("检查失败: {0}", "Check failed: {0}").replace("{0}", message));
@@ -442,6 +499,9 @@ export function activate(context: vscode.ExtensionContext): void {
         status.setReady(false, "DSH: " + t("环境异常，运行「DSH: 检查环境」查看详情", "environment issue — run \"DSH: Check Environment\" for details"));
         void vscode.window.showErrorMessage(t("DSH 环境检查失败：{0}", "DSH environment check failed: {0}").replace("{0}", message));
       }
+      } finally {
+        setTaskActive("envcheck", false);
+      }
     }),
 
     // 兼容性自检：跑一次 tiny 任务，验证流式补丁（明文会话日志）与模型补丁机制
@@ -450,13 +510,14 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showInformationMessage(t("自检已在运行中，请稍候。", "A self-test is already running; please wait."));
         return;
       }
-      if (ChatPanel.current()?.isActive()) {
+      if (isAnyTaskActive()) {
         void vscode.window.showInformationMessage(
-          t("聊天面板有任务正在运行，请先等待完成或取消，再执行兼容性自检。", "A chat task is still running. Wait for it or cancel it before running the compatibility self-test.")
+          t("聊天面板或 @dsh-agent 有任务正在运行，请先等待完成或取消，再执行兼容性自检。", "A chat panel or @dsh-agent task is still running. Wait for it or cancel it before running the compatibility self-test.")
         );
         return;
       }
       selfTestRunning = true;
+      setTaskActive("selftest", true);
       try {
         const folder = await pickFolder();
         if (!folder) return;
@@ -502,6 +563,14 @@ export function activate(context: vscode.ExtensionContext): void {
             );
           }
           if (result.stderr.trim()) output.appendLine(`  stderr: ${result.stderr.trim().slice(0, 300)}`);
+          if (/MISSING_CREDENTIAL|no API key/i.test(`${result.stderr}\n${result.stdout}`)) {
+            output.appendLine(
+              t(
+                "⚠️ 未检测到 DeepSeek API Key：请执行「DSH: 配置 API Key」，或设置环境变量 DEEPSEEK_API_KEY。",
+                "⚠️ No DeepSeek API key detected: run \"DSH: Set API Key\", or set the DEEPSEEK_API_KEY environment variable."
+              )
+            );
+          }
           output.appendLine(t("流式补丁（明文会话日志）: {0}", "streaming patch (plain session log): {0}").replace("{0}", newLog ? t("✓ 已生成", "✓ generated") : t("✗ 未生成（流式将不可用）", "✗ not generated (streaming unavailable)")));
           if (newLog) output.appendLine(t("  日志: {0}", "  log: {0}").replace("{0}", newLog));
           if (sel) output.appendLine(t("模型补丁: 已随任务传入（{0}/{1}），若任务成功即生效", "model patch: passed with task ({0}/{1}), effective if task succeeds").replace("{0}", sel.provider).replace("{1}", sel.model));
@@ -528,6 +597,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       } finally {
         selfTestRunning = false;
+        setTaskActive("selftest", false);
       }
     }),
 
@@ -581,9 +651,13 @@ export function activate(context: vscode.ExtensionContext): void {
     // ---- 快捷提示命令 ----
 
     vscode.commands.registerCommand("dsh-harness-vscode.quickExplainFile", async () => {
-      const chat = await openChatWithDraft(context, cliProvider, envProvider, secrets, status, log, t("请解释当前文件的结构、职责和关键逻辑。\n", "Explain the current file's structure, responsibilities and key logic.\n"));
       const editor = vscode.window.activeTextEditor;
-      if (chat && editor) chat.attachOpenFile();
+      if (!editor) {
+        void vscode.window.showWarningMessage(t("请先打开一个文件，再使用“解释当前文件”。", "Open a file first, then use \"Explain Current File\"."));
+        return;
+      }
+      const chat = await openChatWithDraft(context, cliProvider, envProvider, secrets, status, log, t("请解释当前文件的结构、职责和关键逻辑。\n", "Explain the current file's structure, responsibilities and key logic.\n"));
+      chat?.attachOpenFile();
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.quickReviewChanges", async () => {
@@ -602,6 +676,11 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.quickWriteTests", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        void vscode.window.showWarningMessage(t("请先打开一个文件，再使用“为当前文件写测试”。", "Open a file first, then use \"Write Tests for Current File\"."));
+        return;
+      }
       const chat = await openChatWithDraft(
         context,
         cliProvider,
@@ -611,8 +690,7 @@ export function activate(context: vscode.ExtensionContext): void {
         log,
         t("请为当前文件编写单元测试，遵循项目现有的测试风格与框架。\n", "Write unit tests for the current file, following the project's existing test style and framework.\n")
       );
-      const editor = vscode.window.activeTextEditor;
-      if (chat && editor) chat.attachOpenFile();
+      chat?.attachOpenFile();
     }),
 
     // ---- 终端与记忆 ----
@@ -645,12 +723,13 @@ export function activate(context: vscode.ExtensionContext): void {
   // 启动后延迟检测一次新插件（不阻塞激活；无新插件时完全静默）
   const sentinelTimer = setTimeout(() => {
     void cliProvider()
-      .then((cli) => pluginWatch.checkOnce(cli))
+      .then((cli) => pluginWatch.checkOnce(cli, true))
       .catch(() => {});
   }, 5000);
   context.subscriptions.push({ dispose: () => clearTimeout(sentinelTimer) });
 }
 
 export function deactivate(): void {
-  // 订阅项随 extension host 退出统一释放
+  // 尽量终止还在跑的任务，减少残留子进程
+  ChatPanel.current()?.cancel();
 }

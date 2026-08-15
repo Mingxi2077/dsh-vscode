@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.12 (2026-08-15)
+
+### Fixed（adversarial user-operation round）
+
+- **Global task mutex**: panel task, `/compact`, `@dsh-agent`, self-test, environment check, plugin install/uninstall/check and the plugin sentinel now share one busy lease — two DSH processes can no longer run against the same profile concurrently. Plugin actions are rejected while any task runs, and chat send explains *which* operation is busy.
+- **Environment check is a real preflight**: it now runs `dsh --profile headless --dump-config` (20s cap) and catches missing profile bundles; it also distinguishes “environment OK but no API key” from a full pass instead of always saying “Check passed”.
+- **`@dsh-agent` hardening**: concurrent @dsh-agent requests are rejected; missing API key gets the same friendly guidance as the chat panel; tasks run under the global mutex.
+- **Settings hand-edits no longer crash the extension**: `extraArgs` string/number junk is normalized; `cliPath` non-string ignored; invalid `environment` keys dropped; empty env values ignored; invalid `permissionMode` falls back to `workspace-write`; timeout/history/max-message values are clamped to the declared ranges; string `"false"` booleans are parsed correctly.
+- **Custom provider Base URL validation**: must start with `http://` or `https://`.
+- **`/compact` with an empty conversation** now says there is nothing to compact instead of sending a pointless API call.
+- **Insert Code** no longer inserts the whole answer when there is no code block; it warns instead.
+- **Code block path hints strip `:line` suffixes**, so `src/a.ts:12` no longer becomes a Windows filename like `a.ts:12`.
+- **Session files hand-edited with malformed messages are sanitized on load** (bad roles/contents dropped) instead of breaking the webview/task text.
+- **Local plugin paths starting with `~` are expanded**; configured `.cmd` shims also fall back to npm/pnpm/yarn global roots; a directory set as `cliPath` gives a clear error.
+- **`/effort` without a model selected** now explains that `/model` is needed for the effort to take effect.
+- **Deactivate cancels running panel tasks** to reduce orphaned children.
+
 ## 0.9.11 (2026-08-15)
 
 ### Fixed（user-flow review round）

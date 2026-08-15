@@ -9,10 +9,10 @@ export function relPath(folderPath: string, absPath: string): string {
   return rel.startsWith("..") ? absPath : rel;
 }
 
-/** 从回答内容中提取第一段代码块；没有代码块时返回全文。 */
-export function extractCodeForInsert(content: string): string {
+/** 从回答内容中提取第一段代码块；没有代码块时返回 undefined（避免把整段回答当代码插入）。 */
+export function extractCodeForInsert(content: string): string | undefined {
   const match = content.match(/```[\s\S]*?\n([\s\S]*?)```/);
-  return match ? match[1].replace(/\n$/, "") : content;
+  return match ? match[1].replace(/\n$/, "") : undefined;
 }
 
 /** 把代码插入当前编辑器光标处。 */

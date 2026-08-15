@@ -67,6 +67,31 @@ test("非法会话 id 被拒绝（防路径穿越）", () => {
   assert.throws(() => store.save({ id: "a/b", title: "t", createdAt: 1, updatedAt: 1, messages: [] }));
 });
 
+test("会话文件里的坏消息被丢弃，好会话仍可载入", () => {
+  const root = tmpRoot();
+  const store = new SessionStore(root, "C:\\proj");
+  const dir = path.join(root, "sessions", stableHash("C:\\proj"));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "mixed.json"),
+    JSON.stringify({
+      id: "mixed",
+      title: "mixed",
+      createdAt: 1,
+      updatedAt: 1,
+      messages: [
+        { id: "ok", role: "user", content: "hi", ts: 1 },
+        { id: "bad-role", role: "evil", content: "x", ts: 2 },
+        { id: "bad-content", role: "assistant", content: 42, ts: 3 },
+      ],
+    }),
+    "utf8"
+  );
+  const loaded = store.load("mixed");
+  assert.equal(loaded.messages.length, 1, "坏消息应被丢弃");
+  assert.equal(loaded.messages[0].content, "hi");
+});
+
 test("损坏的会话文件返回 undefined 而非抛错", () => {
   const root = tmpRoot();
   const store = new SessionStore(root, "C:\\proj");

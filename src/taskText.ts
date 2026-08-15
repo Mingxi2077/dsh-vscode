@@ -83,6 +83,11 @@ export function buildTaskText(
   const last = session.messages[session.messages.length - 1];
   if (!last) return lines.join("\n"); // 防御：空会话时不要引用 undefined
   lines.push(zh ? "--- 最新用户消息 ---" : "--- Latest user message ---");
-  lines.push(last.content);
+  // 最新一条也遵守单条消息上限，防止用户误粘贴超大文本
+  let latest = typeof last.content === "string" ? last.content : String(last.content ?? "");
+  if (latest.length > maxMessageChars) {
+    latest = latest.slice(0, maxMessageChars) + (zh ? "\n…(已截断)" : "\n…(truncated)");
+  }
+  lines.push(latest);
   return lines.join("\n");
 }

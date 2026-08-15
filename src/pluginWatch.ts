@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { readInstalledPlugins, findNewPlugins, OFFICIAL_BUNDLES } from "./pluginManager";
 import { checkPluginHeadless, compatLevelIcon } from "./headlessCheck";
 import { ResolvedCli } from "./cli";
+import { isAnyTaskActive, setTaskActive } from "./taskGuard";
 import { t } from "./i18n";
 
 /**
@@ -36,14 +37,19 @@ export class PluginWatch {
     await this.context.globalState.update(PluginWatch.KEY, [...known]);
   }
 
-  /** 检测一次新插件；没有新插件时完全静默。返回检测到的新插件数。 */
-  async checkOnce(cli: ResolvedCli): Promise<number> {
+  /** 检测一次新插件；没有新插件时完全静默。返回检测到的新插件数。
+   * skipIfBusy=true 用于激活定时器/插件中心入口：用户正在跑任务时先跳过，避免 dump-config 抢资源；
+   * 任务结束后的补检调用应传 false（那时租约尚未完全释放，但 dsh 已退出，并发 dump 是安全的）。 */
+  async checkOnce(cli: ResolvedCli, skipIfBusy = false): Promise<number> {
     if (PluginWatch.running) return 0;
+    if (skipIfBusy && isAnyTaskActive()) return 0;
     PluginWatch.running = true;
+    setTaskActive("watch", true);
     try {
       return await this.doCheck(cli);
     } finally {
       PluginWatch.running = false;
+      setTaskActive("watch", false);
     }
   }
 
@@ -66,8 +72,9 @@ export class PluginWatch {
       if (!OFFICIAL_BUNDLES.has(p.packageName)) known.add(p.packageName);
     }
     await this.context.globalState.update(PluginWatch.KEY, [...known]);
-    // 检测记录已落盘，立刻释放类级锁：通知挂起期间新安装的插件仍可被下一次 checkOnce 捕获
+    // 检测记录已落盘，立刻释放类级锁与全局任务租约：通知挂起期间新安装的插件仍可被下一次 checkOnce 捕获
     PluginWatch.running = false;
+    setTaskActive("watch", false);
     const lines = results.map((r) => `${compatLevelIcon(r.level as "ok" | "warning" | "inactive" | "fail")} ${r.name}`).join("\n");
     const pick = await vscode.window.showInformationMessage(
       t(

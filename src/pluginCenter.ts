@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as os from "os";
 import {
   FEATURED_PLUGINS,
   PluginInfo,
@@ -15,6 +16,7 @@ import {
   OFFICIAL_BUNDLES,
 } from "./pluginManager";
 import { ResolvedCli } from "./cli";
+import { isAnyTaskActive, setTaskActive } from "./taskGuard";
 import { t, tf } from "./i18n";
 import { checkPluginHeadless, HeadlessCheckResult } from "./headlessCheck";
 import { PluginWatch } from "./pluginWatch";
@@ -24,6 +26,11 @@ const COMPAT_NOTICE = t(
   `⚠️ 兼容性说明：DSH 插件生态基于官方 Web 端设计，本扩展通过 headless 命令行使用 DSH。插件能否在这里生效，取决于其实现——工具类插件通常可用；依赖 Web 界面、外部 API 或特定宿主的插件可能不生效。安装后扩展会自动检测插件「能否被 DSH 加载」并标注结果，但该检测只保证加载层面，不保证功能完全可用，也不代表官方支持。安装第三方插件前请自行评估来源可信度与使用风险。`,
   `⚠️ Compatibility notice: the DSH plugin ecosystem is designed for the official Web client; this extension drives DSH through the headless CLI. Whether a plugin works here depends on its implementation — tool plugins usually do, while plugins relying on Web UI, external APIs, or specific hosts may not. After install, the extension auto-checks whether the plugin loads and labels the result, but that check only covers the loading layer — it does not guarantee full functionality, nor is it an official endorsement. Please evaluate the trustworthiness and risk of third-party plugins yourself.`
 );
+
+/** 聊天任务运行中不允许增删插件：pnpm 锁/profile 正在被 dsh 使用，容易损坏或互相打架。 */
+function chatTaskActive(): boolean {
+  return isAnyTaskActive();
+}
 
 /** 携带自定义负载的 QuickPick 项（action / packageName 不是标准字段，用接口扩展）。 */
 interface PluginPickItem extends vscode.QuickPickItem {
@@ -162,10 +169,22 @@ async function showPluginActions(cli: ResolvedCli, packageName: string, installe
 
 /** 手动执行 headless 兼容性检测并展示结果（含边界说明）。 */
 async function runCompatibilityCheck(cli: ResolvedCli, packageName: string): Promise<void> {
-  const check = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: t("正在检测 {0} 的 headless 兼容性…", "Checking headless compatibility of {0}…").replace("{0}", packageName) },
-    () => checkPluginHeadless(cli, packageName)
-  );
+  if (isAnyTaskActive()) {
+    void vscode.window.showWarningMessage(
+      t("有任务正在运行，暂时不能检测插件。请先等待完成或取消任务。", "A task is running, so plugins cannot be checked right now. Wait for it or cancel the task first.")
+    );
+    return;
+  }
+  let check: HeadlessCheckResult;
+  setTaskActive("plugin", true);
+  try {
+    check = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: t("正在检测 {0} 的 headless 兼容性…", "Checking headless compatibility of {0}…").replace("{0}", packageName) },
+      () => checkPluginHeadless(cli, packageName)
+    );
+  } finally {
+    setTaskActive("plugin", false);
+  }
   // 手动检测成功后同样写入哨兵记录，避免下次打开插件中心重复通知
   if (watchContext && check.ran) {
     try {
@@ -237,6 +256,10 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
   // 也按本地路径处理，而不是静默当成 npm 包安装。
   let finalSource = resolvedSource;
   const isPathIntent = kind === "path";
+  // 用户常写 ~/plugins/x：先展开 home
+  if ((detected === "path" || isPathIntent) && /^~[\\/]/.test(finalSource)) {
+    finalSource = path.join(os.homedir(), finalSource.slice(2));
+  }
   if ((detected === "path" || isPathIntent) && !path.isAbsolute(finalSource)) {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) {
@@ -248,6 +271,12 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
     finalSource = path.resolve(root, finalSource);
   }
 
+  if (chatTaskActive()) {
+    void vscode.window.showWarningMessage(
+      t("聊天任务正在运行，暂时不能安装插件。请先等待完成或取消任务。", "A chat task is running, so plugins cannot be installed right now. Wait for it or cancel the task first.")
+    );
+    return;
+  }
   const confirm = await vscode.window.showWarningMessage(
     t(
       `将从「${kindLabel}」安装 ${finalSource} 到 headless profile。⚠️ 第三方插件可能包含仅适用于官方 Web 端的组件，在 headless 下可能不生效；安装后扩展会自动检测并提示。继续？`,
@@ -258,24 +287,33 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
   );
   if (confirm !== t("安装", "Install")) return;
 
-  const { res, check } = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: t("正在安装并检测 {0}…", "Installing & checking {0}…").replace("{0}", finalSource) },
-    async () => {
-      const r = await runPluginCommand(cli, "add", finalSource);
-      if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
-      const realName = resolveInstalledName(finalSource);
-      const c = await checkPluginHeadless(cli, realName);
-      // 检测记录必须 await 完成，否则紧接着打开插件中心可能触发哨兵重复检测/通知
-      if (watchContext && c.ran) {
-        try {
-          await new PluginWatch(watchContext).markChecked([realName]);
-        } catch {
-          // globalState 写入失败只影响后续哨兵去重，不阻塞安装结果展示
+  let res: PluginCommandResult;
+  let check: HeadlessCheckResult | undefined;
+  setTaskActive("plugin", true);
+  try {
+    const outcome = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: t("正在安装并检测 {0}…", "Installing & checking {0}…").replace("{0}", finalSource) },
+      async () => {
+        const r = await runPluginCommand(cli, "add", finalSource);
+        if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
+        const realName = resolveInstalledName(finalSource);
+        const c = await checkPluginHeadless(cli, realName);
+        // 检测记录必须 await 完成，否则紧接着打开插件中心可能触发哨兵重复检测/通知
+        if (watchContext && c.ran) {
+          try {
+            await new PluginWatch(watchContext).markChecked([realName]);
+          } catch {
+            // globalState 写入失败只影响后续哨兵去重，不阻塞安装结果展示
+          }
         }
+        return { res: r, check: c };
       }
-      return { res: r, check: c };
-    }
-  );
+    );
+    res = outcome.res;
+    check = outcome.check;
+  } finally {
+    setTaskActive("plugin", false);
+  }
   notifyPluginResult(cli, finalSource, res, check);
 }
 
@@ -361,6 +399,12 @@ function localizePluginResult(pkg: string, res: { ok: boolean; message: string; 
 }
 
 async function installPlugin(cli: ResolvedCli, packageName: string): Promise<void> {
+  if (chatTaskActive()) {
+    void vscode.window.showWarningMessage(
+      t("聊天任务正在运行，暂时不能安装插件。请先等待完成或取消任务。", "A chat task is running, so plugins cannot be installed right now. Wait for it or cancel the task first.")
+    );
+    return;
+  }
   const confirm = await vscode.window.showWarningMessage(
     t(
       `将安装插件 ${packageName} 到 headless profile（~/.dsh/profiles/headless）。⚠️ 第三方插件可能包含仅适用于官方 Web 端的组件，在 headless 下可能不生效；安装后扩展会自动检测并提示。继续？`,
@@ -370,22 +414,31 @@ async function installPlugin(cli: ResolvedCli, packageName: string): Promise<voi
     t("安装", "Install")
   );
   if (confirm !== t("安装", "Install")) return;
-  const { res, check } = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: t("正在安装并检测 {0}…", "Installing & checking {0}…").replace("{0}", packageName) },
-    async () => {
-      const r = await runPluginCommand(cli, "add", packageName);
-      if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
-      const c = await checkPluginHeadless(cli, packageName);
-      if (watchContext && c.ran) {
-        try {
-          await new PluginWatch(watchContext).markChecked([packageName]);
-        } catch {
-          // 同 installFromSource：写入失败不阻塞安装结果展示
+  let res: PluginCommandResult;
+  let check: HeadlessCheckResult | undefined;
+  setTaskActive("plugin", true);
+  try {
+    const outcome = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: t("正在安装并检测 {0}…", "Installing & checking {0}…").replace("{0}", packageName) },
+      async () => {
+        const r = await runPluginCommand(cli, "add", packageName);
+        if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
+        const c = await checkPluginHeadless(cli, packageName);
+        if (watchContext && c.ran) {
+          try {
+            await new PluginWatch(watchContext).markChecked([packageName]);
+          } catch {
+            // 同 installFromSource：写入失败不阻塞安装结果展示
+          }
         }
+        return { res: r, check: c };
       }
-      return { res: r, check: c };
-    }
-  );
+    );
+    res = outcome.res;
+    check = outcome.check;
+  } finally {
+    setTaskActive("plugin", false);
+  }
   notifyPluginResult(cli, packageName, res, check);
 }
 
@@ -400,6 +453,12 @@ async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<v
     );
     return;
   }
+  if (chatTaskActive()) {
+    void vscode.window.showWarningMessage(
+      t("聊天任务正在运行，暂时不能卸载插件。请先等待完成或取消任务。", "A chat task is running, so plugins cannot be uninstalled right now. Wait for it or cancel the task first.")
+    );
+    return;
+  }
   const confirm = await vscode.window.showWarningMessage(
     t(
       `将卸载插件 ${packageName}（从 headless profile 移除）。继续？`,
@@ -409,10 +468,16 @@ async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<v
     t("卸载", "Uninstall")
   );
   if (confirm !== t("卸载", "Uninstall")) return;
-  const progress = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: t("正在卸载 {0}…", "Uninstalling {0}…").replace("{0}", packageName) },
-    async () => runPluginCommand(cli, "rm", packageName)
-  );
+  let progress: PluginCommandResult;
+  setTaskActive("plugin", true);
+  try {
+    progress = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: t("正在卸载 {0}…", "Uninstalling {0}…").replace("{0}", packageName) },
+      async () => runPluginCommand(cli, "rm", packageName)
+    );
+  } finally {
+    setTaskActive("plugin", false);
+  }
   notifyPluginResult(cli, packageName, progress);
 }
 

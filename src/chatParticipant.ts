@@ -1,11 +1,12 @@
 import * as path from "path";
 import * as vscode from "vscode";
-import { ResolvedCli, buildSpawnArgs, runDsh } from "./cli";
+import { ResolvedCli, buildSpawnArgs, runDsh, normalizeExtraArgs } from "./cli";
 import { SessionTracer } from "./sessionTracer";
 import { writeModelPatch, loadSelection } from "./modelSelection";
 import { stableHash } from "./sessionStore";
 import { ProjectMemory } from "./memory";
 import { PluginWatch } from "./pluginWatch";
+import { isAnyTaskActive, setTaskActive } from "./taskGuard";
 import { isZh, t, tf } from "./i18n";
 
 /**
@@ -41,6 +42,17 @@ function registerParticipant(
   log?: (line: string) => void
 ): vscode.Disposable {
   const participant = vscode.chat.createChatParticipant("dsh-agent", async (request, _chatCtx, stream, token) => {
+    if (isAnyTaskActive()) {
+      stream.markdown(
+        t(
+          "已有 DSH 任务正在运行（聊天面板或另一个 @dsh-agent），请等待完成或先取消。",
+          "A DSH task is already running (chat panel or another @dsh-agent). Wait for it or cancel it first."
+        )
+      );
+      return { metadata: {} };
+    }
+    setTaskActive("participant", true);
+    try {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) {
       stream.markdown(t("请先打开一个项目文件夹，再使用 DSH。", "Open a project folder first, then use DSH."));
@@ -68,16 +80,24 @@ function registerParticipant(
     }
 
     const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-    const extraArgs = [...(cfg.get<string[]>("extraArgs", []) ?? [])];
-    const timeoutSec = cfg.get<number>("timeoutSeconds", 600);
-    const streamProgress = cfg.get<boolean>("streamProgress", true);
+    const extraArgs = normalizeExtraArgs(cfg.get("extraArgs", []));
+    const rawTimeout = cfg.get<number>("timeoutSeconds", 600);
+    const timeoutSec = Number.isFinite(rawTimeout) ? Math.min(7200, Math.max(30, rawTimeout)) : 600;
+    const rawStream = cfg.get<unknown>("streamProgress", true);
+    const streamProgress = typeof rawStream === "boolean" ? rawStream : rawStream !== "false";
 
     if (streamProgress) {
       extraArgs.push("--patch", path.join(context.extensionPath, "patch", "stream.patch.yml"));
     }
     const folderHash = stableHash(folder.uri.fsPath);
     const selection = loadSelection(context.globalStorageUri.fsPath, folderHash);
-    const modelPatch = selection ? writeModelPatch(context.globalStorageUri.fsPath, folderHash, selection) : undefined;
+    let modelPatch: string | undefined;
+    try {
+      modelPatch = selection ? writeModelPatch(context.globalStorageUri.fsPath, folderHash, selection) : undefined;
+    } catch {
+      // 模型补丁写失败不影响 @dsh-agent 任务本身
+      modelPatch = undefined;
+    }
     if (modelPatch) extraArgs.push("--patch", modelPatch);
 
     const args = buildSpawnArgs(cli, extraArgs, taskText);
@@ -117,6 +137,15 @@ function registerParticipant(
       }
       if (result.code !== 0) {
         const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
+        if (/MISSING_CREDENTIAL|no API key/i.test(detail)) {
+          stream.markdown(
+            t(
+              `检测到未配置 API Key。请执行「DSH: 配置 API Key」输入 DeepSeek API Key（sk-...），或在系统环境变量中设置 DEEPSEEK_API_KEY。\n\n原始错误：\n${detail}`,
+              `No API key configured. Run "DSH: Set API Key" to enter your DeepSeek API key (sk-...), or set DEEPSEEK_API_KEY in your environment.\n\nRaw error:\n${detail}`
+            )
+          );
+          return { metadata: {} };
+        }
         stream.markdown(tf(t("DSH 任务失败（exit {0}）：\n\n```\n{1}\n```", "DSH task failed (exit {0}):\n\n```\n{1}\n```"), result.code ?? "?", detail));
         return { metadata: {} };
       }
@@ -131,6 +160,9 @@ function registerParticipant(
       tracer?.finish();
       await tracerDone;
       sub.dispose();
+    }
+    } finally {
+      setTaskActive("participant", false);
     }
   });
 

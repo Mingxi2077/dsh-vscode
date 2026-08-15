@@ -35,12 +35,12 @@ export function extractCodeBlocks(markdown: string): CodeBlock[] {
     for (const cl of codeLines.slice(0, 3)) {
       const m = cl.match(/^\s*(?:\/\/|#|--|<!--|%\s*)?\s*(?:file|path|target)\s*[:：]\s*(\S+)/i);
       if (m) {
-        hint = m[1].replace(/[`'"]/g, "");
+        hint = cleanPathHint(m[1].replace(/[`'"]/g, ""));
         break;
       }
     }
-    if (!hint) hint = detectPath(prevLine);
-    if (!hint) hint = detectPath(lang);
+    if (!hint) hint = cleanPathHint(detectPath(prevLine));
+    if (!hint) hint = cleanPathHint(detectPath(lang));
 
     blocks.push({ language: lang, code: codeLines.join("\n"), pathHint: hint });
   }
@@ -51,6 +51,13 @@ export function extractCodeBlocks(markdown: string): CodeBlock[] {
 function detectPath(text: string): string | undefined {
   const m = text.match(FILE_RE);
   return m ? m[0] : undefined;
+}
+
+/** 去掉模型常加的 `:12` 行号后缀，避免把 `a.ts:12` 当成 Windows 文件名。 */
+function cleanPathHint(hint: string | undefined): string | undefined {
+  if (!hint) return undefined;
+  const cleaned = hint.replace(/[:：]\d+$/, "");
+  return cleaned.length > 0 ? cleaned : undefined;
 }
 
 /** 某行之前最近的一个非空、非围栏行。 */

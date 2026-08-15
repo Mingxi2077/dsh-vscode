@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { t } from "./i18n";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -90,7 +91,30 @@ export class SessionStore {
     try {
       const raw = fs.readFileSync(file, "utf8");
       const parsed = JSON.parse(raw) as ChatSession;
-      if (!parsed.id || !Array.isArray(parsed.messages)) return undefined;
+      if (typeof parsed.id !== "string" || !parsed.id || !Array.isArray(parsed.messages)) return undefined;
+      // 会话文件可能被用户手改坏：逐条校验消息形状，坏消息丢弃而不是让 webview/taskText 崩溃
+      parsed.messages = parsed.messages
+        .filter((m): m is ChatMessage => {
+          if (!m || typeof m !== "object") return false;
+          const msg = m as Partial<ChatMessage>;
+          return (
+            typeof msg.id === "string" &&
+            (msg.role === "user" || msg.role === "assistant" || msg.role === "system") &&
+            typeof msg.content === "string"
+          );
+        })
+        .map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          ts: typeof m.ts === "number" ? m.ts : Date.now(),
+          ...(Array.isArray(m.trace) ? { trace: m.trace } : {}),
+        }));
+      if (typeof parsed.title !== "string" || !parsed.title) {
+        parsed.title = t("新会话", "New session");
+      }
+      if (typeof parsed.createdAt !== "number") parsed.createdAt = Date.now();
+      if (typeof parsed.updatedAt !== "number") parsed.updatedAt = Date.now();
       return parsed;
     } catch {
       return undefined;

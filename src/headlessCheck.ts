@@ -52,7 +52,10 @@ export interface HeadlessCheckResult {
 const DUMP_TIMEOUT_MS = 60000;
 
 /** 运行 `dsh --profile headless --dump-config`，返回 { stdout, stderr, exitCode }。导出便于测试。 */
-export function runDumpConfig(cli: ResolvedCli): Promise<{ stdout: string; stderr: string; exitCode: number | null; timedOut: boolean }> {
+export function runDumpConfig(
+  cli: ResolvedCli,
+  timeoutMs = DUMP_TIMEOUT_MS
+): Promise<{ stdout: string; stderr: string; exitCode: number | null; timedOut: boolean }> {
   return new Promise((resolve) => {
     const args =
       cli.kind === "entry"
@@ -82,7 +85,7 @@ export function runDumpConfig(cli: ResolvedCli): Promise<{ stdout: string; stder
           resolve({ stdout, stderr, exitCode: null, timedOut: true });
         }
       }, 5000);
-    }, DUMP_TIMEOUT_MS);
+    }, timeoutMs);
     let outDone = false;
     let errDone = false;
     let closeDone = false;
