@@ -1,10 +1,19 @@
 # Changelog
 
-## 0.9.6 (2026-08-15)
+## 0.9.7 (2026-08-15)
 
 ### Added
 
 - **Plugin watch (automatic detection of newly installed plugins)**: no matter how a plugin gets into the headless profile — via the plugin center UI, directly by the DSH agent in chat (e.g. "install a plugin for me" → the agent runs `dsh plugin add` itself), or manually — the extension now notices plugins that were never compatibility-checked and runs the check automatically (on activation, when opening the plugin center, and after each chat task), then reports the result. This closes the gap where agent-installed plugins skipped the check entirely.
+
+### Fixed
+
+- **Memory file i18n**: the `.dsh/memory.md` default template, the `/remember` timestamp and the truncation notice now follow the VS Code UI language (previously hard-coded Chinese).
+
+## 0.9.6 (2026-08-15)
+
+### Added
+
 - **Headless compatibility check**: after installing a plugin (or on demand from the plugin center), the extension runs `dsh --profile headless --dump-config` and objectively reports whether the plugin is actually loaded by the headless profile: ✅ loaded & config patch active / ⚠️ loaded with missing plugin rows / ⚪ installed but inactive (non-bundle) / ❌ check failed. This works for any source (npm / GitHub / URL / local path).
 - **Clear notice before install**: the plugin center now shows an explicit, prominent notice that the DSH plugin ecosystem is designed for the official Web client and that this extension uses headless — tool plugins usually work, while plugins depending on Web UI / external APIs / specific hosts may not. The install confirmation also repeats this warning.
 
