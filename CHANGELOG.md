@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.8 (2026-08-15)
+
+### Fixed (deep review round — 3 parallel code audits)
+
+- **Critical: `settings.yaml` content loss**: adding a provider when the file had no `llm-pi-ai:` block returned only the new block, silently deleting all other settings. The original content is now preserved and the block appended.
+- **Critical: live tool/todo rendering TypeError**: `media/chat.js` shadowed the i18n `t` function with local `const t` (tool results) and `for (const t of live.todos)`, throwing `TypeError` and freezing the live feed. Renamed to `tool`/`item`.
+- **Critical: plugin name resolution**: `resolveInstalledName` used a substring heuristic (`spec.includes(name)`) that could return the wrong package for URL/path installs, corrupting activation status and compatibility checks. Now exact-match first, URL/path-only containment.
+- **Plugin command timeout could re-run an install in the background**: the timeout path did not set `settled`, so the later `close` event re-entered `finish()` and, if stdout matched the build-allow regex, spawned a second install whose result was discarded. Timeout and spawn-error paths now short-circuit.
+- **`decodeURIComponent` could throw URIError** on malformed registry output, crashing the extension host. Wrapped in a safe decode.
+- **Build-allow auto-retry only matched stdout**: pnpm can print the error to stderr; the retry gate now checks both streams.
+- **Compatibility check false warnings**: `missingEntries` matched by substring, so a short package name could be flagged by another package's warning. Now matches the bracketed name exactly.
+- **Compatibility check could hang forever**: if `close` never fired after SIGTERM, the promise never resolved. Added a SIGKILL grace period and a fallback resolve.
+- **Manual installs re-triggered the plugin watch**: installs through the plugin center did not mark the package as checked, so the watcher notified again on the next trigger. Manual installs now update the shared checked set.
+- **GitHub source fixes**: `owner/repo.git` no longer produces a doubled `.git`; `ssh://` URLs and bare `https://github.com/…` URLs are recognized as git sources; explicit "local path" choice no longer falls back to npm for bare names.
+- **Settings/config robustness**: provider replacement as the last item no longer duplicates the block; `allowBuildScripts` writes into the `onlyBuiltDependencies:` list (inline `[]` handled) instead of the file tail; preset enable/disable now write atomically with backup + rollback; session save is atomic (tmp + rename); `historyMessages=0` no longer injects the whole history.
+- **i18n long tail**: provider wizard, model/effort/skills pickers, compact/status messages, chat participant messages, status bar, quick commands, config descriptions in the settings UI — all bilingual (Chinese comments stay as the dev language; user-visible strings follow the UI language).
+- **i18n module no longer requires `vscode` at load time** (injectable language), so Node unit tests work without a vscode stub.
+- **Resource & race hardening**: session tracer always finishes in `finally` (no orphaned polling loop); `runDsh` checks `signal.aborted` before spawn (cancellation during CLI/env resolution is honored); `/compact` is guarded against concurrent runs; slash-command async handlers report errors instead of unhandled rejections; loading a session now resets the context chips UI.
+- **`modelSelection` honors `DSH_HOME`** and reads model lists with both `- id:` and `- name:` keys.
+- Known limitation (not changed): the model patch file contains only `agent-default-model` + `llm-pi-ai`; if DSH treats `settings-file.config.path` as a replacement (not a merge), other top-level settings would be ignored while the model selection patch is active.
+
 ## 0.9.7 (2026-08-15)
 
 ### Added

@@ -2,7 +2,7 @@
   "name": "dsh-harness-vscode",
   "displayName": "DSH Agent for VS Code",
   "description": "%description%",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "publisher": "mingxi2077",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -179,7 +179,7 @@
         "dsh-harness-vscode.cliPath": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to the dsh executable or @deepseek-ai/dsh's lib/bin.js. Empty = resolve from PATH automatically."
+          "description": "%config.cliPath%"
         },
         "dsh-harness-vscode.extraArgs": {
           "type": "array",
@@ -187,14 +187,14 @@
             "type": "string"
           },
           "default": [],
-          "description": "Extra args appended to the dsh launch command (after --profile headless, e.g. --patch <path>)."
+          "description": "%config.extraArgs%"
         },
         "dsh-harness-vscode.timeoutSeconds": {
           "type": "number",
           "default": 600,
           "minimum": 30,
           "maximum": 7200,
-          "description": "Timeout in seconds for a single task; auto-cancelled when exceeded."
+          "description": "%config.timeoutSeconds%"
         },
         "dsh-harness-vscode.environment": {
           "type": "object",
@@ -202,31 +202,31 @@
             "type": "string"
           },
           "default": {},
-          "description": "Extra environment variables passed to the dsh subprocess (e.g. API keys)."
+          "description": "%config.environment%"
         },
         "dsh-harness-vscode.historyMessages": {
           "type": "number",
           "default": 20,
           "minimum": 1,
           "maximum": 100,
-          "description": "Number of recent chat messages folded into the task text (for multi-turn continuity)."
+          "description": "%config.historyMessages%"
         },
         "dsh-harness-vscode.maxMessageChars": {
           "type": "number",
           "default": 8000,
           "minimum": 500,
           "maximum": 100000,
-          "description": "Max characters of a single history message folded into the task text."
+          "description": "%config.maxMessageChars%"
         },
         "dsh-harness-vscode.streamProgress": {
           "type": "boolean",
           "default": true,
-          "description": "Stream the thinking chain and tool calls live (tails the DSH session event log); off = final answer only."
+          "description": "%config.streamProgress%"
         },
         "dsh-harness-vscode.debugStreaming": {
           "type": "boolean",
           "default": false,
-          "description": "Debug: append streaming diagnostics at the end of each answer (whether the session log was found, how many events parsed)."
+          "description": "%config.debugStreaming%"
         },
         "dsh-harness-vscode.permissionMode": {
           "type": "string",
@@ -236,7 +236,7 @@
             "danger-full-access"
           ],
           "default": "workspace-write",
-          "description": "Sandbox permission mode passed to dsh (DSH_PERMISSION_MODE). read-only: read only; workspace-write: read/write inside the workspace; danger-full-access: fully unrestricted with auto-approval (only when you fully trust dsh and the task)."
+          "description": "%config.permissionMode%"
         }
       }
     }

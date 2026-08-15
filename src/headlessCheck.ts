@@ -70,6 +70,19 @@ export function runDumpConfig(cli: ResolvedCli): Promise<{ stdout: string; stder
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
+      // 宽限期后强制结束；若 close 迟迟不触发（Unix 下 SIGTERM 可能被忽略），
+      // 兜底直接 resolve，避免 Promise 永久挂起
+      setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* ignore */
+        }
+        if (!settled) {
+          settled = true;
+          resolve({ stdout, stderr, exitCode: null, timedOut: true });
+        }
+      }, 5000);
     }, DUMP_TIMEOUT_MS);
     let outDone = false;
     let errDone = false;
@@ -93,6 +106,7 @@ export function runDumpConfig(cli: ResolvedCli): Promise<{ stdout: string; stder
     });
     child.on("error", () => {
       clearTimeout(timer);
+      settled = true;
       resolve({ stdout, stderr, exitCode: -1, timedOut: false });
     });
     child.on("close", (code) => {
@@ -120,9 +134,11 @@ export function parseDumpConfig(
       return clean === packageName;
     })
     .map((l) => l.trim());
-  // entry not found 警告：`dsh: [<包名>] patch: entry "<id>" not found` —— 方括号里是 patch 来源包名
+  // entry not found 警告：`dsh: [<包名>] patch: entry "<id>" not found` —— 方括号里是 patch 来源包名。
+  // 用正则精确匹配方括号内的包名，避免短包名（如 dsh-tool）被其它包（如 dsh-tool-json）的警告误命中
+  const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const missingEntries = lines
-    .filter((l) => /patch: entry ".*" not found/.test(l) && l.includes(packageName))
+    .filter((l) => new RegExp(`dsh:\\s*\\[${escaped}\\]\\s*patch: entry`).test(l))
     .map((l) => l.trim());
   // 有该包的 entry 警告 → 它声明为 bundle 但补丁行缺失（部分不生效），比 inactive 更值得警示
   const level = missingEntries.length > 0 ? "warning" : hasPatchBlock ? "ok" : "inactive";

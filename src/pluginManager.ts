@@ -107,6 +107,33 @@ export function isActive(packageName: string): boolean {
   return readInstalledPlugins().some((p) => p.packageName === packageName && p.active);
 }
 
+/** 通过依赖 spec（URL / github 短名 / 本地路径）反查 profile 里真实的包名。
+ * 例如 spec=git+https://…/dsh-artifact.git → 真实包名 @dsh-external/dsh-artifact；
+ * npm 包名输入则原样返回。
+ * 注意：只用精确匹配 + 对依赖 spec 值的规范化包含（仅限 URL/路径类输入），
+ * 绝不用「名字是输入的子串」这类启发式，避免反查到错误包名。 */
+export function resolveInstalledName(spec: string): string {
+  const s = spec.trim();
+  try {
+    const pkg = JSON.parse(fs.readFileSync(profilePackageJsonPath(), "utf8"));
+    const deps = pkg.dependencies ?? {};
+    // 1) 精确匹配依赖名
+    if (Object.prototype.hasOwnProperty.call(deps, s)) return s;
+    const looksLikeUrlOrPath =
+      s.includes("://") || s.startsWith("git+") || s.startsWith("github:") || s.startsWith("file:") ||
+      /^[A-Za-z]:[\\/]/.test(s) || s.startsWith("./") || s.startsWith("../") || s.endsWith(".git");
+    for (const [name, specVal] of Object.entries(deps)) {
+      // 2) 依赖 spec 值精确等于输入
+      if (String(specVal) === s) return name;
+      // 3) 仅当输入像 URL/路径时，才允许 spec 值包含输入（如完整 URL 长于输入）
+      if (looksLikeUrlOrPath && String(specVal).includes(s)) return name;
+    }
+  } catch {
+    /* ignore */
+  }
+  return s;
+}
+
 /** 官方核心 bundles，不参与兼容性检测。 */
 export const OFFICIAL_BUNDLES = new Set(["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless"]);
 
@@ -138,17 +165,26 @@ export interface PluginErrorAnalysis {
   lines: string[];
 }
 
+/** 安全 decode：非法百分号编码（截断的 %、%zz）不抛 URIError。 */
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
 /** 从 pnpm/dsh 错误输出中提取缺失依赖的包名（支持官方 registry 与 npmmirror CDN 两种 URL 形式）。 */
 export function extractMissingDep(output: string): string | undefined {
   // npmmirror CDN: https://cdn.npmmirror.com/packages/%40deepseek-ai/dsh-type-meta/0.0.1-rc.1/...
   const m1 = output.match(/packages\/((?:%40[^\/]+\/)?[^\/]+)\//);
-  if (m1) return decodeURIComponent(m1[1].replace(/%2f/gi, "/"));
+  if (m1) return safeDecode(m1[1].replace(/%2f/gi, "/"));
   // 官方 registry: https://registry.npmjs.org/@deepseek-ai%2fdsh-type-meta 或 /@scope/pkg 或 /pkg
   const m2 = output.match(/registry\.npmjs\.org\/((?:@[^\/\s]+(?:%2f|\/)[^\/\s@]+)|[^\/\s@]+)/i);
-  if (m2) return decodeURIComponent(m2[1].replace(/%2f/gi, "/"));
+  if (m2) return safeDecode(m2[1].replace(/%2f/gi, "/"));
   // 兜底: GET https://.../<pkg> 或 <scope>/<pkg>
   const m3 = output.match(/GET\s+https?:\/\/[^\s]+\/((?:@[^\/\s]+(?:\/|%2f)[^\/\s@]+)|[^\/\s@]+)(?:@|\/|$)/i);
-  if (m3) return decodeURIComponent(m3[1].replace(/%2f/gi, "/"));
+  if (m3) return safeDecode(m3[1].replace(/%2f/gi, "/"));
   return undefined;
 }
 
@@ -170,6 +206,14 @@ export function analyzePluginError(stdout: string, stderr: string): PluginErrorA
       .map((l) => (l.length > 200 ? l.slice(0, 200) + "…" : l))
       .slice(0, n);
 
+  // --- network 优先：若输出含明确的网络错误，即使同时出现回退 CDN 的 404 也应判为网络问题。
+  // FETCH_404 是"依赖不存在"语义（归 dep404），排除；401/403/408/5xx 属连接/认证/超时类 → network
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network unreachable|couldn'?t connect|tunneling socket|ERR_PNPM_FETCH_(?!404)[45]\d\d/i.test(combined)) {
+    const keyLines = meaningful.filter((l) =>
+      /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network|proxy|connect|FETCH_(?!404)[45]\d\d/i.test(l)
+    );
+    return { kind: "network", lines: cap(keyLines.length ? keyLines : meaningful, 6) };
+  }
   // --- dep404 ---
   if (/404\s+Not Found|ERR_PNPM_FETCH_404|Not Found - GET/.test(combined)) {
     const keyLines = meaningful.filter((l) => /404|Not Found|npm error|ERR_PNPM_FETCH_404|GET https?:/.test(l));
@@ -178,13 +222,6 @@ export function analyzePluginError(stdout: string, stderr: string): PluginErrorA
       missingDep: extractMissingDep(combined),
       lines: cap(keyLines.length ? keyLines : meaningful, 6),
     };
-  }
-  // --- network ---
-  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network unreachable|couldn'?t connect|tunneling socket|ERR_PNPM_FETCH_5\d\d/i.test(combined)) {
-    const keyLines = meaningful.filter((l) =>
-      /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network|proxy|connect|FETCH_5\d\d/i.test(l)
-    );
-    return { kind: "network", lines: cap(keyLines.length ? keyLines : meaningful, 6) };
   }
   // --- generic: 优先 error 行，否则跳过 Progress 进度行的真实输出 ---
   const errLines = meaningful.filter((l) => /npm error|ERR_PNPM|pnpm error|error\s*:|failed/i.test(l));
@@ -200,7 +237,8 @@ export function githubShortToHttps(input: string): string {
   const [base, ref] = s.replace(/^github:/, "").split("#");
   const m = base.match(/^([\w.-]+)\/([\w.-]+)$/);
   if (!m) return s;
-  return `git+https://github.com/${m[1]}/${m[2]}.git${ref ? `#${ref}` : ""}`;
+  const repo = m[2].replace(/\.git$/, ""); // 用户可能粘贴 owner/repo.git
+  return `git+https://github.com/${m[1]}/${repo}.git${ref ? `#${ref}` : ""}`;
 }
 
 /** 识别插件安装来源类型（npm 包名 / github: 短名 / owner/repo 短名 / git URL / tarball URL / 本地路径）。 */
@@ -208,8 +246,12 @@ export function installSourceKind(input: string): "npm" | "github" | "git-url" |
   const s = input.trim();
   if (!s) return "npm";
   if (s.startsWith("github:")) return "github";
-  if (s.startsWith("git+") || s.startsWith("git:") || /^[\w.-]+@[\w.-]+:/.test(s)) return "git-url";
-  if (/^https?:\/\//.test(s)) return s.endsWith(".git") ? "git-url" : "url";
+  if (s.startsWith("git+") || s.startsWith("git:") || s.startsWith("ssh://") || /^[\w.-]+@[\w.-]+:/.test(s)) return "git-url";
+  if (/^https?:\/\//.test(s)) {
+    // 裸 GitHub 仓库 URL（无 .git 后缀）也按 git 仓库处理，而不是 tarball
+    if (s.endsWith(".git") || /^https?:\/\/(www\.)?github\.com\//i.test(s)) return "git-url";
+    return "url";
+  }
   if (/^[./\\]|^[A-Za-z]:[\\/]/.test(s)) return "path";
   // owner/repo 短名（npm 包名不允许裸斜杠；scoped 包以 @ 开头，这里排除）
   if (/^[^@][\w.-]+\/[\w.-]+$/.test(s)) return "github";
@@ -248,13 +290,40 @@ export function allowBuildScripts(pkgName: string, file = pnpmWorkspacePath()): 
     if (new RegExp(`^\\s*-\\s*['"]?${escaped}['"]?\\s*$`, "m").test(raw)) {
       return true;
     }
-    // 规范化：把 "onlyBuiltDependencies:  - 'x'"（键+内联列表）拆成两行
+    // 规范化：把 "onlyBuiltDependencies:  - 'x'"（键+内联列表）拆成两行；
+    // 以及 "onlyBuiltDependencies: []"（内联空列表）→ 块序列头（避免同一键同时有流式值与块序列）
     raw = raw.replace(/(onlyBuiltDependencies:)\s+(-[^\n]*)/g, "$1\n  $2");
-    // 追加包名
-    if (!/^\s*onlyBuiltDependencies:/m.test(raw)) {
-      raw = raw.trimEnd() + "\n\nonlyBuiltDependencies:\n";
+    raw = raw.replace(/(onlyBuiltDependencies:\s*)\[\]\s*$/m, "$1\n");
+    // 追加包名（定位 onlyBuiltDependencies 键，插到其列表内；键不在文件末尾时也不会错位）
+    if (/^\s*onlyBuiltDependencies:/m.test(raw)) {
+      const lines = raw.split(/\r?\n/);
+      let keyIdx = -1;
+      let listEnd = lines.length;
+      for (let i = 0; i < lines.length; i++) {
+        if (/^\s*onlyBuiltDependencies:\s*$/.test(lines[i])) {
+          keyIdx = i;
+          listEnd = i + 1;
+          break;
+        }
+      }
+      if (keyIdx >= 0) {
+        // 找到该键下列表的末尾：直到下一个缩进 0 的顶层键或文件尾
+        for (let i = keyIdx + 1; i < lines.length; i++) {
+          const ind = (lines[i].match(/^ */)?.[0].length ?? 0);
+          if (lines[i].trim() !== "" && ind === 0 && !lines[i].trim().startsWith("-")) {
+            listEnd = i;
+            break;
+          }
+          listEnd = i + 1;
+        }
+        const item = "  - '" + pkgName.replace(/'/g, "''") + "'";
+        lines.splice(listEnd, 0, item);
+        fs.writeFileSync(file, lines.join("\n"), "utf8");
+        return true;
+      }
     }
-    raw = raw.trimEnd() + "\n  - '" + pkgName + "'\n";
+    raw = raw.trimEnd() + "\n\nonlyBuiltDependencies:\n";
+    raw = raw.trimEnd() + "\n  - '" + pkgName.replace(/'/g, "''") + "'\n";
     fs.writeFileSync(file, raw, "utf8");
     return true;
   } catch {
@@ -271,6 +340,12 @@ export function runPluginCommand(
   retryCount = 0
 ): Promise<PluginCommandResult> {
   return new Promise((resolve) => {
+    // 防注入：packageName 是 spawn 数组参数（非 shell，无命令注入），但以 `-` 开头会被
+    // pnpm 当作 flag 解析，拒绝这类输入
+    if (/^[-]/.test(packageName.trim())) {
+      resolve({ ok: false, message: `invalid package spec: ${packageName} (must not start with "-")` });
+      return;
+    }
     const args =
       cli.kind === "entry"
         ? ["--expose-internals", cli.entry, "plugin", "--profile", "headless", action, packageName]
@@ -282,6 +357,9 @@ export function runPluginCommand(
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
+      // 超时：置 settled 防止 kill 后 close/end 事件到达时 finish() 重新跑完整逻辑
+      // （否则 stdout 若命中 build-allow 正则，会再 spawn 一次后台安装且结果被丢弃）
+      settled = true;
       child.kill();
       resolve({ ok: false, message: `plugin command timed out (${packageName})` });
     }, 180000);
@@ -296,7 +374,8 @@ export function runPluginCommand(
       settled = true;
       clearTimeout(timer);
       if (codeRef === 0) {
-        const active = action === "add" ? isActive(packageName) : undefined;
+        // URL/路径/github 短名安装时 packageName 是 spec，须反查真实包名再判激活状态
+        const active = action === "add" ? isActive(resolveInstalledName(packageName)) : undefined;
         const detail = stdout.trim().split(/\r?\n/).filter((l) => l.includes("bundle") || l.includes("warning")).join(" ");
         const suffix = detail ? ` (${detail.slice(0, 120)})` : "";
         resolve({
@@ -304,8 +383,8 @@ export function runPluginCommand(
           active,
           message: action === "add" ? `installed ${packageName}${suffix}` : `removed ${packageName}`,
         });
-      } else if (action === "add" && retryCount < 2 && /ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED|needs to execute build scripts but is not in the "onlyBuiltDependencies"/.test(stdout)) {
-        // git/URL 插件需要 build 许可（pnpm 真实错误在 stdout）：解析包名 → 加入允许列表 → 重试
+      } else if (action === "add" && retryCount < 2 && /ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED|needs to execute build scripts but is not in the "onlyBuiltDependencies"/.test(stdout + "\n" + stderr)) {
+        // git/URL 插件需要 build 许可（pnpm 错误可能打在 stdout 或 stderr）：解析包名 → 加入允许列表 → 重试
         const names = extractBuiltAllowNames(stdout + "\n" + stderr);
         if (names.length > 0) {
           const allowed = names.every((n) => allowBuildScripts(n));
@@ -369,6 +448,7 @@ export function runPluginCommand(
     });
     child.on("error", (err) => {
       clearTimeout(timer);
+      settled = true;
       resolve({ ok: false, message: `spawn failed: ${err.message}` });
     });
     child.on("close", (code) => {

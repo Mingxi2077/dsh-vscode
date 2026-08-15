@@ -356,9 +356,9 @@
             live.order.push("tool:" + id);
             live.tools.set(id, { name: msg.name || "tool", args: msg.args || "", status: t("toolRunning"), result: "", isError: false });
           } else {
-            const t = live.tools.get(id);
-            if (msg.args) t.args = msg.args;
-            if (msg.name) t.name = msg.name;
+            const tool = live.tools.get(id);
+            if (msg.args) tool.args = msg.args;
+            if (msg.name) tool.name = msg.name;
           }
         }
         break;
@@ -368,17 +368,17 @@
           live.order.push("tool:" + msg.callId);
           live.tools.set(msg.callId, { name: msg.name, args: msg.args, status: t("toolRunning"), result: "", isError: false });
         } else {
-          const t = live.tools.get(msg.callId);
-          if (msg.args) t.args = msg.args;
+          const tool = live.tools.get(msg.callId);
+          if (msg.args) tool.args = msg.args;
         }
         break;
       }
       case "tool-result": {
-        const t = live.tools.get(msg.callId);
-        if (t) {
-          t.status = t("toolDone");
-          t.isError = !!msg.isError;
-          t.result = msg.summary;
+        const tool = live.tools.get(msg.callId);
+        if (tool) {
+          tool.status = t("toolDone");
+          tool.isError = !!msg.isError;
+          tool.result = msg.summary;
         }
         break;
       }
@@ -435,21 +435,21 @@
     if (live.todos.length) {
       const todoBox = document.createElement("div");
       todoBox.className = "live-todos";
-      for (const t of live.todos) {
+      for (const item of live.todos) {
         const row = document.createElement("div");
-        row.className = "live-todo " + ("live-todo-" + (t.status || "pending"));
+        row.className = "live-todo " + ("live-todo-" + (item.status || "pending"));
         const mark = {
           completed: "✅",
           in_progress: "🔄",
           pending: "⬜",
-        }[t.status] || "⬜";
+        }[item.status] || "⬜";
         const markEl = document.createElement("span");
         markEl.className = "live-todo-mark";
         markEl.textContent = mark;
         const contentEl = document.createElement("span");
         contentEl.className = "live-todo-content";
-        contentEl.textContent = t.content;
-        contentEl.title = { completed: t("todoDone"), in_progress: t("todoInProgress"), pending: t("todoPending") }[t.status] || t.status;
+        contentEl.textContent = item.content;
+        contentEl.title = { completed: t("todoDone"), in_progress: t("todoInProgress"), pending: t("todoPending") }[item.status] || item.status;
         row.appendChild(markEl);
         row.appendChild(contentEl);
         todoBox.appendChild(row);
@@ -501,30 +501,30 @@
         div.textContent = text || "…";
         el.appendChild(div);
       } else if (key.startsWith("tool:")) {
-        const t = live.tools.get(key.slice(5));
-        if (!t) continue;
+        const tool = live.tools.get(key.slice(5));
+        if (!tool) continue;
         const card = document.createElement("div");
-        card.className = "live-tool" + (t.isError ? " is-error" : "");
+        card.className = "live-tool" + (tool.isError ? " is-error" : "");
         const row = document.createElement("div");
         row.className = "live-tool-row";
         const name = document.createElement("span");
         name.className = "live-tool-name";
-        name.textContent = "⚙ " + t.name;
+        name.textContent = "⚙ " + tool.name;
         const status = document.createElement("span");
         status.className = "live-tool-status";
-        status.textContent = t.status;
+        status.textContent = tool.status;
         row.appendChild(name);
         row.appendChild(status);
         card.appendChild(row);
-        if (t.args) {
+        if (tool.args) {
           const args = document.createElement("code");
-          args.textContent = t.args.slice(0, 200);
+          args.textContent = tool.args.slice(0, 200);
           card.appendChild(args);
         }
-        if (t.result) {
+        if (tool.result) {
           const res = document.createElement("div");
           res.className = "live-tool-result";
-          res.textContent = t.result.slice(0, 200);
+          res.textContent = tool.result.slice(0, 200);
           card.appendChild(res);
         }
         el.appendChild(card);

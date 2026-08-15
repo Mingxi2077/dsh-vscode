@@ -65,7 +65,8 @@ export function buildTaskText(
     }
   }
 
-  const hist = session.messages.slice(0, -1).slice(-historyMessages * 2);
+  // historyMessages=0 表示禁用历史注入；slice(-0) 会返回整个数组，需显式处理
+  const hist = historyMessages > 0 ? session.messages.slice(0, -1).slice(-historyMessages * 2) : [];
   if (hist.length > 0) {
     lines.push(zh ? "--- 历史对话 ---" : "--- Conversation history ---");
     for (const m of hist) {
@@ -79,6 +80,7 @@ export function buildTaskText(
   }
 
   const last = session.messages[session.messages.length - 1];
+  if (!last) return lines.join("\n"); // 防御：空会话时不要引用 undefined
   lines.push(zh ? "--- 最新用户消息 ---" : "--- Latest user message ---");
   lines.push(last.content);
   return lines.join("\n");

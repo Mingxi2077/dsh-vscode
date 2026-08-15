@@ -108,6 +108,39 @@ test("githubShortToHttps：短名转显式 https URL", () => {
   assert.equal(githubShortToHttps("dsh-plugin-doctor"), "dsh-plugin-doctor", "非短名保持原样");
 });
 
+test("resolveInstalledName：依赖 spec 反查真实包名", () => {
+  const { resolveInstalledName } = require("../out/pluginManager.js");
+  const fs = require("node:fs");
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-plugin-"));
+  try {
+    const dir = path.join(root, "profiles", "headless");
+    fs.mkdirSync(dir, { recursive: true });
+    const pkg = {
+      name: "dsh-profile-headless-test",
+      private: true,
+      dependencies: {
+        "@dsh-external/dsh-artifact": "git+https://github.com/dsh-external/dsh-artifact.git",
+        "dsh-bash-terminal": "https://registry.npmmirror.com/dsh-bash-terminal/-/dsh-bash-terminal-0.3.14.tgz",
+        "dsh-plugin-doctor": "^0.1.0",
+      },
+    };
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify(pkg, null, 2), "utf8");
+    const orig = process.env.DSH_HOME;
+    process.env.DSH_HOME = root;
+    try {
+      assert.equal(resolveInstalledName("git+https://github.com/dsh-external/dsh-artifact.git"), "@dsh-external/dsh-artifact");
+      assert.equal(resolveInstalledName("https://registry.npmmirror.com/dsh-bash-terminal/-/dsh-bash-terminal-0.3.14.tgz"), "dsh-bash-terminal");
+      assert.equal(resolveInstalledName("dsh-plugin-doctor"), "dsh-plugin-doctor", "npm 包名原样返回");
+      assert.equal(resolveInstalledName("not-installed"), "not-installed", "未安装的 spec 原样返回");
+    } finally {
+      if (orig === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = orig;
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("installSourceKind：识别各种安装来源", () => {
   assert.equal(installSourceKind("dsh-plugin-doctor"), "npm");
   assert.equal(installSourceKind("@scope/pkg"), "npm");
@@ -252,4 +285,12 @@ test("runPluginCommand：非零退出 + 404 输出 → dep404 分类", async () 
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("runPluginCommand：以 - 开头的 spec 被拒绝（防 flag 注入）", async () => {
+  const { runPluginCommand } = require("../out/pluginManager.js");
+  const cli = { kind: "entry", node: process.execPath, entry: "unused", source: "test" };
+  const res = await runPluginCommand(cli, "add", "--force");
+  assert.equal(res.ok, false);
+  assert.match(res.message, /must not start with "-"/);
 });

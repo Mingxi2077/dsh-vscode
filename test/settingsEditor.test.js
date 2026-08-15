@@ -107,3 +107,22 @@ test("writeProviderToSettings：文件不存在时创建", () => {
     fs.rmSync(path.dirname(file), { recursive: true, force: true });
   }
 });
+
+test("upsertProvider：无 llm-pi-ai 段时保留原文件其它配置（防数据丢失回归）", () => {
+  const raw = "agent-default-model:\n  provider: deepseek-official\n  model: deepseek-v4-flash\nui-onboarding:\n  welcomeNoticeVersion: 1\n";
+  const next = upsertProvider(raw, { id: "lmuai", apiKeyEnv: "LMUAI_API_KEY" });
+  assert.ok(next.includes("agent-default-model:"), "应保留 agent-default-model 段");
+  assert.ok(next.includes("ui-onboarding:"), "应保留 ui-onboarding 段");
+  assert.ok(next.includes("  provider: deepseek-official"), "应保留原内容正文");
+  assert.ok(next.includes("llm-pi-ai:"), "应追加 llm-pi-ai 段");
+  assert.ok(next.includes("    lmuai:"), "应有新 provider");
+});
+
+test("upsertProvider：替换 providers 段内最后一个 provider（其后有顶层键）不产生重复", () => {
+  const raw = "llm-pi-ai:\n  providers:\n    openai:\n      apiKeyEnv: OLD_KEY\nagent-default-model:\n  provider: x\n";
+  const next = upsertProvider(raw, { id: "openai", apiKeyEnv: "NEW_KEY" });
+  assert.ok(!next.includes("OLD_KEY"), "旧 apiKeyEnv 应被替换");
+  assert.equal((next.match(/openai:/g) || []).length, 1, "openai 只应出现一次（不得重复条目）");
+  assert.ok(next.includes("      apiKeyEnv: NEW_KEY"), "应为新值");
+  assert.ok(next.includes("agent-default-model:"), "不应破坏后续段");
+});

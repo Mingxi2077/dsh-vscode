@@ -18,6 +18,8 @@ import { t } from "./i18n";
 
 export class PluginWatch {
   private static readonly KEY = "dsh.checkedPlugins.v1";
+  /** 防重入：多个触发点（激活/聊天任务结束/插件中心打开）可能并发调用。 */
+  private running = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -25,8 +27,27 @@ export class PluginWatch {
     return this.context.globalState.get<string[]>(PluginWatch.KEY, []);
   }
 
+  /** 手动安装并完成兼容性检测后，把包名标记为已检测，避免哨兵下次重复通知。 */
+  async markChecked(packageNames: string[]): Promise<void> {
+    const names = packageNames.filter((n) => n && !OFFICIAL_BUNDLES.has(n));
+    if (names.length === 0) return;
+    const known = new Set(this.checked());
+    for (const n of names) known.add(n);
+    await this.context.globalState.update(PluginWatch.KEY, [...known]);
+  }
+
   /** 检测一次新插件；没有新插件时完全静默。返回检测到的新插件数。 */
   async checkOnce(cli: ResolvedCli): Promise<number> {
+    if (this.running) return 0;
+    this.running = true;
+    try {
+      return await this.doCheck(cli);
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async doCheck(cli: ResolvedCli): Promise<number> {
     const installed = readInstalledPlugins();
     const fresh = findNewPlugins(installed, this.checked());
     if (fresh.length === 0) return 0;

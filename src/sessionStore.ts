@@ -99,7 +99,12 @@ export class SessionStore {
 
   save(session: ChatSession): void {
     session.updatedAt = Date.now();
-    fs.writeFileSync(this.fileFor(session.id), JSON.stringify(session, null, 2), "utf8");
+    const file = this.fileFor(session.id);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // 原子写：临时文件 + rename，崩溃/被杀时不留下截断的 JSON
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(session, null, 2), "utf8");
+    fs.renameSync(tmp, file);
   }
 
   remove(id: string): void {

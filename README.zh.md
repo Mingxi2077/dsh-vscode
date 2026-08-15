@@ -76,9 +76,12 @@
 
 DSH 是插件驱动的架构：模型、工具、沙箱、会话存储、UI、甚至 agent loop 本身都是插件，通过各 profile 的 `cordis.patch.yml` 组合而成。本扩展把这种能力带到 VS Code：
 
-- **「DSH: 插件中心」**：查看 headless profile 实际加载的插件（🟢 激活 / ⚪ 未激活），可安装/卸载真实存在于 npm 的 DSH 插件包（`dsh plugin --profile headless add|rm`）。
+- **「DSH: 插件中心」**：查看 headless profile 实际加载的插件（🟢 激活 / ⚪ 未激活），可安装插件——支持**任意来源**：npm 包名（`dsh-plugin-doctor`）、GitHub 仓库（`dsh-external/dsh-artifact`，走显式 HTTPS 无需 SSH key）、tarball URL、或本地插件目录。
   - headless profile 开箱即加载 **80+ 个插件行**（llm、session、agent、tool-*、goal、compaction、sandbox、skills 等）。
-  - 注：社区插件生态尚早——精选清单里的插件多数是 GitHub 仓库、尚未发布到 npm；只列出真实 npm 包为可安装项。
+  - **headless 兼容性检测**：DSH 插件生态基于官方 Web 端设计，本扩展通过 headless CLI 使用 DSH。每次安装后扩展运行 `dsh --profile headless --dump-config`，客观报告插件是否真的被加载：✅ 已加载且配置生效 / ⚠️ 已加载但有警告 / ⚪ 仅安装未激活 / ❌ 检测失败；也可在插件操作菜单里手动重测。
+  - **诚实边界**：检测只证明「能加载」，无法保证功能完全可用（依赖 Web UI、外部 API 或特定宿主的插件可能加载成功但不生效）。插件中心在安装前会弹出醒目的免责声明。
+  - **插件哨兵**：无论插件是怎么装的——插件中心、聊天里让 agent 直接装（"帮我装个插件"）、还是手动改 profile——扩展都会发现未检测过的新插件并自动补一次兼容性检测（扩展激活时、打开插件中心时、每次聊天任务结束后），然后报告结果。
+  - 注：社区插件生态尚早——精选清单里的插件多数是 GitHub 仓库、尚未发布到 npm，部分插件还依赖从未发布的包（安装会失败并给出清晰提示）。
 - **「DSH: 模式预设」**：一键启用/停用 DSH 原生行为预设（写入 headless profile 的 cordis.patch.yml，按 id 覆盖插件配置，下次任务生效）：
   - **自动会话压缩**：长对话上下文压力达 80% 自动压缩，保留 20% 关键信息，不爆上下文
   - **严格计划模式**：先出完整计划再动手，禁止未经批准执行变更

@@ -17,5 +17,14 @@
   "command.quickWriteTests": "DSH: Write Tests for Current File",
   "command.openTerminal": "DSH: Open dsh Terminal",
   "command.editMemory": "DSH: Edit Project Memory",
-  "command.showMemory": "DSH: View Project Memory"
+  "command.showMemory": "DSH: View Project Memory",
+  "config.cliPath": "Absolute path to the dsh executable or @deepseek-ai/dsh's lib/bin.js. Empty = resolve from PATH automatically.",
+  "config.extraArgs": "Extra args appended to the dsh launch command (after --profile headless, e.g. --patch <path>).",
+  "config.timeoutSeconds": "Timeout in seconds for a single task; auto-cancelled when exceeded.",
+  "config.environment": "Extra environment variables passed to the dsh subprocess (e.g. API keys).",
+  "config.historyMessages": "Number of recent chat messages folded into the task text (for multi-turn continuity). Set 0 to disable history injection.",
+  "config.maxMessageChars": "Max characters of a single history message folded into the task text.",
+  "config.streamProgress": "Stream the thinking chain and tool calls live (tails the DSH session event log); off = final answer only.",
+  "config.debugStreaming": "Debug: append streaming diagnostics at the end of each answer (whether the session log was found, how many events parsed).",
+  "config.permissionMode": "Sandbox permission mode passed to dsh (DSH_PERMISSION_MODE). read-only: read only; workspace-write: read/write inside the workspace; danger-full-access: fully unrestricted with auto-approval (only when you fully trust dsh and the task)."
 }

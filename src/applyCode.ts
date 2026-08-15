@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import type { CodeBlock } from "./codeBlocks";
-import { t } from "./i18n";
+import { t, tf } from "./i18n";
 
 /** 确认并把代码块写入文件。 */
 export async function applyCodeBlock(folderPath: string, block: CodeBlock): Promise<void> {
@@ -15,14 +15,14 @@ export async function applyCodeBlock(folderPath: string, block: CodeBlock): Prom
 
     const action = await vscode.window.showQuickPick(
       [
-        { label: exists ? `覆盖 ${rel}` : `创建 ${rel}` },
-        { label: "另存为新文件…", description: "" },
+        { label: exists ? tf(t("覆盖 {0}", "Overwrite {0}"), rel) : tf(t("创建 {0}", "Create {0}"), rel), apply: "write" },
+        { label: t("另存为新文件…", "Save as new file…"), description: "", apply: "save-as" },
       ],
-      { placeHolder: `应用到文件：${block.pathHint}` }
+      { placeHolder: tf(t("应用到文件：{0}", "Apply to file: {0}"), block.pathHint) }
     );
     if (!action) return;
 
-    if (action.label === "另存为新文件…") {
+    if (action.apply === "save-as") {
       await saveAs(folderPath, block);
       return;
     }

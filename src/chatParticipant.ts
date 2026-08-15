@@ -5,7 +5,7 @@ import { SessionTracer } from "./sessionTracer";
 import { writeModelPatch, loadSelection } from "./modelSelection";
 import { stableHash } from "./sessionStore";
 import { ProjectMemory } from "./memory";
-import { isZh } from "./i18n";
+import { isZh, t, tf } from "./i18n";
 
 /**
  * 注册 @dsh-agent 聊天参与者：在 VS Code 内置 Chat 里 @dsh-agent <任务> 即可唤起，
@@ -20,16 +20,16 @@ export function registerChatParticipant(
   const participant = vscode.chat.createChatParticipant("dsh-agent", async (request, _chatCtx, stream, token) => {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) {
-      stream.markdown("请先打开一个项目文件夹，再使用 DSH。");
+      stream.markdown(t("请先打开一个项目文件夹，再使用 DSH。", "Open a project folder first, then use DSH."));
       return { metadata: {} };
     }
     const prompt = request.prompt.trim();
     if (!prompt) {
-      stream.markdown("请输入要交给 DSH 的任务，例如：`@dsh-agent 总结一下这个项目的结构`。");
+      stream.markdown(t("请输入要交给 DSH 的任务，例如：`@dsh-agent 总结一下这个项目的结构`。", "Enter a task for DSH, e.g. `@dsh-agent summarize this project's structure`."));
       return { metadata: {} };
     }
 
-    stream.progress("正在运行 DSH…");
+    stream.progress(t("正在运行 DSH…", "Running DSH…"));
 
     const refText = await collectReferences(request.references);
     const memory = new ProjectMemory(folder.uri.fsPath);
@@ -40,7 +40,7 @@ export function registerChatParticipant(
       cli = await cliProvider();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      stream.markdown(`无法解析 dsh 命令：${message}`);
+      stream.markdown(tf(t("无法解析 dsh 命令：{0}", "Cannot resolve dsh command: {0}"), message));
       return { metadata: {} };
     }
 
@@ -67,8 +67,8 @@ export function registerChatParticipant(
     if (streamProgress) {
       tracer = new SessionTracer(env, Date.now(), log);
       void tracer.start((msg) => {
-        if (msg.kind === "tool") stream.progress(`执行工具：${msg.name}`);
-        else if (msg.kind === "turn" && msg.turn > 0) stream.progress(`第 ${msg.turn} 轮`);
+        if (msg.kind === "tool") stream.progress(tf(t("执行工具：{0}", "Running tool: {0}"), msg.name));
+        else if (msg.kind === "turn" && msg.turn > 0) stream.progress(tf(t("第 {0} 轮", "Round {0}"), msg.turn));
       }, abort.signal);
     }
 
@@ -82,19 +82,19 @@ export function registerChatParticipant(
       tracer?.finish();
 
       if (token.isCancellationRequested) {
-        stream.markdown("已取消。");
+        stream.markdown(t("已取消。", "Cancelled."));
         return { metadata: {} };
       }
       if (result.timedOut) {
-        stream.markdown(`任务超时（超过 ${timeoutSec} 秒）已被取消。可在设置 dsh-harness-vscode.timeoutSeconds 中调整。`);
+        stream.markdown(tf(t("任务超时（超过 {0} 秒）已被取消。可在设置 dsh-harness-vscode.timeoutSeconds 中调整。", "Task timed out after {0}s and was cancelled. Adjust dsh-harness-vscode.timeoutSeconds in settings."), timeoutSec));
         return { metadata: {} };
       }
       if (result.code !== 0) {
         const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
-        stream.markdown(`DSH 任务失败（exit ${result.code ?? "?"}）：\n\n\`\`\`\n${detail}\n\`\`\``);
+        stream.markdown(tf(t("DSH 任务失败（exit {0}）：\n\n```\n{1}\n```", "DSH task failed (exit {0}):\n\n```\n{1}\n```"), result.code ?? "?", detail));
         return { metadata: {} };
       }
-      stream.markdown(result.stdout.trim() || "（DSH 未返回文本输出）");
+      stream.markdown(result.stdout.trim() || t("（DSH 未返回文本输出）", "(DSH returned no text output)"));
       return { metadata: {} };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -119,10 +119,10 @@ async function collectReferences(
       try {
         const buf = await vscode.workspace.fs.readFile(value);
         const content = Buffer.from(buf).toString("utf8");
-        const clipped = content.length > 40000 ? content.slice(0, 40000) + "\n…(文件过大，已截断)" : content;
+        const clipped = content.length > 40000 ? content.slice(0, 40000) + t("\n…(文件过大，已截断)", "\n…(file too large, truncated)") : content;
         parts.push(`@${value.fsPath}\n${clipped}`);
       } catch {
-        parts.push(`@${value.fsPath}\n（无法读取）`);
+        parts.push(`@${value.fsPath}\n${t("（无法读取）", "(unreadable)")}`);
       }
     } else if (typeof value === "string" && value.trim()) {
       parts.push(value.slice(0, 2000));

@@ -234,13 +234,14 @@ export class ChatPanel {
   private loadSession(id: string): void {
     const loaded = this.store.load(id);
     if (!loaded) {
-      void vscode.window.showWarningMessage(`会话不存在或已损坏: ${id}`);
+      void vscode.window.showWarningMessage(t("会话不存在或已损坏: {0}", "Session does not exist or is corrupted: {0}").replace("{0}", id));
       return;
     }
     if (this.running) this.cancel();
     this.session = loaded;
     this.contextBlocks = [];
     this.post({ type: "sessionChanged", sessionId: this.session.id, title: this.session.title });
+    this.post({ type: "contextChanged", blocks: [] });
     this.post({ type: "resetMessages" });
     this.post({ type: "appendMessages", messages: loaded.messages });
     this.panel.title = `DSH — ${loaded.title}`;
@@ -432,6 +433,8 @@ export class ChatPanel {
       this.status.setReady(false, `DSH: ${message}`);
       return this.systemMessage(tf(t("无法解析 dsh 命令：{0}", "Cannot resolve dsh command: {0}"), message));
     }
+    let tracer: SessionTracer | undefined;
+    let tracerDone: Promise<void> = Promise.resolve();
     try {
       const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
       const extraArgs = cfg.get<string[]>("extraArgs", []);
@@ -451,9 +454,6 @@ export class ChatPanel {
       const args = buildSpawnArgs(cli, extraArgs, taskText);
       const env = await this.envProvider();
 
-      // 实时追踪会话事件日志 → 思维链 / 工具调用进度 / 用量
-      let tracer: SessionTracer | undefined;
-      let tracerDone: Promise<void> = Promise.resolve();
       // 思维链轨迹累积（保留到回答里，可折叠展示）
       const traceOrder: string[] = [];
       const reasoningMap = new Map<string, string>();
@@ -545,9 +545,6 @@ export class ChatPanel {
       // 任务中 agent 可能直接装了插件（绕过插件中心 UI）：自动补一次兼容性检测
       void new PluginWatch(this.context).checkOnce(cli).catch(() => {});
 
-      tracer?.finish();
-      await tracerDone;
-
       if (abort.signal.aborted) {
         return this.systemMessage(t("已取消任务。", "Task cancelled."));
       }
@@ -591,6 +588,10 @@ export class ChatPanel {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return this.systemMessage(tf(t("运行 dsh 失败：{0}", "Failed to run dsh: {0}"), message));
+    } finally {
+      // 无论成功/失败/异常都必须结束 tracer，否则其轮询循环永不退出（资源泄漏）
+      tracer?.finish();
+      await tracerDone;
     }
   }
 
@@ -649,6 +650,8 @@ export class ChatPanel {
 
   /** 跑一次不落聊天记录的一次性任务（用于 /compact）。 */
   async runHeadlessTask(task: string): Promise<string | null> {
+    // 并发守卫：主任务或另一个后台任务运行时不再启动新的 dsh 子进程
+    if (this.running || this.busy) return null;
     this.busy = true;
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), 120000);
@@ -670,7 +673,9 @@ export class ChatPanel {
       // 后台工具子任务也可能安装插件：同样补一次检测
       void new PluginWatch(this.context).checkOnce(cli).catch(() => {});
       return result.code === 0 ? result.stdout.trim() || null : null;
-    } catch {
+    } catch (err) {
+      // 记录原因，便于定位（/compact 失败不再是无从查起的"压缩失败"）
+      this.log?.(`runHeadlessTask failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     } finally {
       clearTimeout(timer);
@@ -817,11 +822,11 @@ export class ChatPanel {
     }
     const pick = await vscode.window.showQuickPick(
       blocks.map((b, i) => ({
-        label: b.pathHint ?? `代码块 ${i + 1}（${b.language || "text"}）`,
+        label: b.pathHint ?? tf(t("代码块 {0}（{1}）", "Code block {0} ({1})"), i + 1, b.language || "text"),
         description: b.code.slice(0, 80).replace(/\n/g, " "),
         block: b,
       })),
-      { placeHolder: "选择要应用哪个代码块" }
+      { placeHolder: t("选择要应用哪个代码块", "Choose which code block to apply") }
     );
     if (pick) await applyCodeBlock(this.folder.uri.fsPath, pick.block);
   }

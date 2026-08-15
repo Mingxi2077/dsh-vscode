@@ -68,10 +68,12 @@ export function upsertProvider(raw: string, profile: LlmProviderProfile): string
   const block = renderProviderBlock(profile);
 
   if (piIndex < 0) {
-    // 文件里还没有 llm-pi-ai 段：在末尾追加
-    const tail = lines.filter((l) => l.trim().length > 0);
-    const body = tail.length > 0 ? "\n" : "";
-    return body + "llm-pi-ai:\n  providers:\n" + block + "\n";
+    // 文件里还没有 llm-pi-ai 段：**保留原文**，在末尾追加新段
+    // （此前实现只返回新块，会清空 settings.yaml 里所有其它配置——数据丢失）
+    const tail = raw.trimEnd();
+    return tail
+      ? `${tail}\n\nllm-pi-ai:\n  providers:\n${block}\n`
+      : `llm-pi-ai:\n  providers:\n${block}\n`;
   }
 
   // 定位 providers: 行（llm-pi-ai 下缩进 2）
@@ -99,7 +101,11 @@ export function upsertProvider(raw: string, profile: LlmProviderProfile): string
   for (let i = providersIndex + 1; i < lines.length; i++) {
     const indent = (lines[i].match(/^ */)?.[0].length ?? 0);
     const content = lines[i].trim();
-    if (indent <= 2 && content) break; // 离开 providers 段
+    if (indent <= 2 && content) {
+      // 离开 providers 段：若正在扫描目标 provider，则其结束于本行
+      if (providerStart >= 0) providerEnd = i;
+      break;
+    }
     if (indent === 4 && /^[A-Za-z0-9_-]+:$/.test(content)) {
       if (content.slice(0, -1) === profile.id) {
         if (providerStart < 0) providerStart = i;

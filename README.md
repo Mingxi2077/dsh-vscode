@@ -78,9 +78,12 @@ If `dsh` is not on PATH, set its path manually in the `dsh-harness-vscode.cliPat
 
 DSH is built on a plugin-driven architecture: models, tools, sandbox, session storage, the UI — even the agent loop itself — are all plugins composed via `cordis.patch.yml` in each profile. This extension surfaces that power:
 
-- **"DSH: Plugin Center"**: browse the plugins actually loaded in your headless profile (🟢 active / ⚪ inactive), and install/uninstall real npm DSH plugin packages (`dsh plugin --profile headless add|rm`).
+- **"DSH: Plugin Center"**: browse the plugins actually loaded in your headless profile (🟢 active / ⚪ inactive), and install plugins **from any source** — npm package names (`dsh-plugin-doctor`), GitHub repos (`dsh-external/dsh-artifact`, installed via explicit HTTPS so no SSH key is needed), tarball URLs, or a local plugin folder.
   - The headless profile loads **80+ plugin rows** out of the box (llm, session, agent, tool-*, goal, compaction, sandbox, skills…).
-  - Note: the community plugin ecosystem is still early — most plugins on the curated lists are GitHub repos not yet published to npm. Only real npm packages are listed as installable.
+  - **Headless compatibility check**: the DSH plugin ecosystem is designed for the official Web client; this extension drives DSH through the headless CLI. After every install the extension runs `dsh --profile headless --dump-config` and reports objectively whether the plugin actually loads: ✅ loaded & patch active / ⚠️ loaded with warnings / ⚪ installed but inactive / ❌ check failed. You can also re-run the check from the plugin's action menu.
+  - **Honest scope**: the check only proves "it loads" — it cannot guarantee every feature works (plugins depending on Web UI, external APIs or specific hosts may load but not fully function). A prominent notice in the plugin center states this boundary before you install anything.
+  - **Plugin watch**: however a plugin got installed — via the plugin center, directly by the DSH agent in chat ("install me a plugin"), or manually — the extension notices plugins that were never checked and auto-runs the compatibility check (on activation, on opening the plugin center, and after each chat task), then reports the result.
+  - Note: the community plugin ecosystem is still early — many plugins on curated lists are GitHub repos not yet published to npm, and some depend on packages that were never published (installing them fails with a clear message).
 - **"DSH: Mode Presets"**: enable/disable DSH native behavior presets with one click (written to the headless profile's `cordis.patch.yml`, overriding plugin config by id; effective on next task):
   - **Auto compaction**: long conversations auto-compact at 80% context pressure, keeping 20% key info.
   - **Strict plan mode**: produce a full plan before acting; no unapproved changes.

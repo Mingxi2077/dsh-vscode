@@ -118,6 +118,28 @@ function renderPresetEntry(preset: PresetDef): string {
   }
 }
 
+/** 原子写入：临时文件 + rename，失败时回滚。写前备份原文件（若非空）。 */
+function writePatchFile(file: string, next: string): void {
+  const backup = `${file}.bak-${Date.now()}`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  let raw = "";
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    /* 不存在则跳过备份 */
+  }
+  if (raw.trim()) fs.writeFileSync(backup, raw, "utf8");
+  try {
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, next, "utf8");
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    // 回滚：恢复备份
+    if (fs.existsSync(backup)) fs.copyFileSync(backup, file);
+    throw err;
+  }
+}
+
 /** 启用预设：写入 cordis.patch.yml（保留现有内容，追加预设条目）。 */
 export function enablePreset(
   id: PresetId,
@@ -132,8 +154,7 @@ export function enablePreset(
   const entry = renderPresetEntry(preset);
   const next = insertIntoPatch(raw, entry);
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, next, "utf8");
+    writePatchFile(file, next);
     return { ok: true, message: "enabled", presetName: preset.name, enPresetName: preset.enName };
   } catch (err) {
     return { ok: false, message: `write cordis.patch.yml failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -153,8 +174,7 @@ export function disablePreset(
   const raw = readPatch(file);
   const next = removePresetFromPatch(raw, id);
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, next, "utf8");
+    writePatchFile(file, next);
     return { ok: true, message: "disabled", presetName: preset.name, enPresetName: preset.enName };
   } catch (err) {
     return { ok: false, message: `write cordis.patch.yml failed: ${err instanceof Error ? err.message : String(err)}` };

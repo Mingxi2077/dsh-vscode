@@ -14,7 +14,7 @@ import { registerSidebarView } from "./sidebar";
 import { openPluginCenter, pluginStatusSummary } from "./pluginCenter";
 import { openPresetCenter, presetStatusSummary } from "./presetCenter";
 import { PluginWatch } from "./pluginWatch";
-import { t, tf } from "./i18n";
+import { t, tf, setUiLanguage } from "./i18n";
 
 /** 检查 llm-pi-ai.providers 配置的可服务性（返回多行说明）。 */
 function checkProviderConfig(): string[] {
@@ -72,7 +72,7 @@ class StatusBarController implements StatusBar {
   private readonly item: vscode.StatusBarItem;
   private running = false;
   private ready = true;
-  private message = "DSH: 打开对话面板";
+  private message = "DSH: " + t("打开对话面板", "Open Chat panel");
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -94,7 +94,7 @@ class StatusBarController implements StatusBar {
 
   private update(): void {
     this.item.text = this.running
-      ? "$(sync~spin) DSH 运行中"
+      ? "$(sync~spin) " + t("DSH 运行中", "DSH running")
       : "$(comment-discussion) DSH";
     this.item.tooltip = this.message;
     this.item.color = this.ready ? undefined : new vscode.ThemeColor("errorForeground");
@@ -205,6 +205,7 @@ async function openChatWithDraft(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  setUiLanguage(vscode.env.language);
   const status = new StatusBarController();
   context.subscriptions.push(status);
 
@@ -237,7 +238,7 @@ export function activate(context: vscode.ExtensionContext): void {
       } catch {
         // 检测失败不阻塞插件中心
       }
-      void openPluginCenter(cliProvider);
+      void openPluginCenter(cliProvider, context);
     }),
 
     // 模式预设：启用/停用 DSH 原生行为预设
@@ -448,21 +449,21 @@ export function activate(context: vscode.ExtensionContext): void {
         const buf = await vscode.workspace.fs.readFile(target);
         content = Buffer.from(buf).toString("utf8");
       } catch {
-        content = "（无法读取文件内容）";
+        content = t("（无法读取文件内容）", "(could not read file content)");
       }
       const label = relPath(folder, target.fsPath);
       chat.addContextBlock({
         kind: "file",
         label,
-        content: content.length > 40000 ? content.slice(0, 40000) + "\n…(文件过大，已截断)" : content,
+        content: content.length > 40000 ? content.slice(0, 40000) + t("\n…(文件过大，已截断)", "\n…(file too large, truncated)") : content,
       });
-      chat.setDraft(`请分析这个文件：@${label}\n`);
+      chat.setDraft(tf(t("请分析这个文件：@{0}\n", "Please analyze this file: @{0}\n"), label));
     }),
 
     // ---- 快捷提示命令 ----
 
     vscode.commands.registerCommand("dsh-harness-vscode.quickExplainFile", async () => {
-      const chat = await openChatWithDraft(context, cliProvider, envProvider, secrets, status, log, "请解释当前文件的结构、职责和关键逻辑。\n");
+      const chat = await openChatWithDraft(context, cliProvider, envProvider, secrets, status, log, t("请解释当前文件的结构、职责和关键逻辑。\n", "Explain the current file's structure, responsibilities and key logic.\n"));
       const editor = vscode.window.activeTextEditor;
       if (chat && editor) chat.attachOpenFile();
     }),
@@ -474,12 +475,12 @@ export function activate(context: vscode.ExtensionContext): void {
       panel = chat;
       const diff = await gitDiffSummary(folder.uri.fsPath);
       if (diff) {
-        chat.addContextBlock({ kind: "file", label: "git diff（当前改动）", content: diff });
+        chat.addContextBlock({ kind: "file", label: t("git diff（当前改动）", "git diff (current changes)"), content: diff });
       } else {
-        void vscode.window.showInformationMessage("未检测到 git 改动（可能不是 git 仓库或没有未提交改动）。");
+        void vscode.window.showInformationMessage(t("未检测到 git 改动（可能不是 git 仓库或没有未提交改动）。", "No git changes detected (not a git repo or nothing uncommitted)."));
       }
       chat.setDraft(
-        "请审查当前改动（git diff 已作为上下文提供）：指出潜在问题、改进建议，并说明每个文件改了什么。\n"
+        t("请审查当前改动（git diff 已作为上下文提供）：指出潜在问题、改进建议，并说明每个文件改了什么。\n", "Review the current changes (git diff provided as context): point out potential issues, improvement suggestions, and what each file changed.\n")
       );
     }),
 
@@ -491,7 +492,7 @@ export function activate(context: vscode.ExtensionContext): void {
         secrets,
         status,
         log,
-        "请为当前文件编写单元测试，遵循项目现有的测试风格与框架。\n"
+        t("请为当前文件编写单元测试，遵循项目现有的测试风格与框架。\n", "Write unit tests for the current file, following the project's existing test style and framework.\n")
       );
       const editor = vscode.window.activeTextEditor;
       if (chat && editor) chat.attachOpenFile();

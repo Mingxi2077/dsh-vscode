@@ -94,7 +94,10 @@ export function providerDisplayName(providerId: string, settingsPath = defaultSe
 }
 
 export function defaultSettingsPath(): string {
-  return path.join(os.homedir(), ".dsh", "settings.yaml");
+  // 与 settingsEditor.settingsPath 保持一致：支持 DSH_HOME 覆盖 ~/.dsh
+  return process.env.DSH_HOME
+    ? path.join(process.env.DSH_HOME, "settings.yaml")
+    : path.join(os.homedir(), ".dsh", "settings.yaml");
 }
 
 /** 从 settings.yaml 读取 llm-pi-ai.providers（用户自配提供商）。解析失败返回空数组。 */
@@ -157,7 +160,8 @@ export function listModels(providerId: string, settingsPath = defaultSettingsPat
       continue;
     }
     if (indent === 4 && content && content !== "models:") break; // 下一个提供商或离开
-    const nm = content.match(/^- name:\s*(\S+)\s*$/);
+    // 兼容 `- id: <model>`（本扩展写入的格式）与 `- name: <model>`（DSH 文档常见格式）
+    const nm = content.match(/^-\s*(?:id|name):\s*(\S+)\s*$/);
     if (nm) models.push(nm[1]);
   }
   return models;

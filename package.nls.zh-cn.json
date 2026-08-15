@@ -17,5 +17,14 @@
   "command.quickWriteTests": "DSH: 为当前文件写测试",
   "command.openTerminal": "DSH: 打开 dsh 终端",
   "command.editMemory": "DSH: 编辑项目记忆",
-  "command.showMemory": "DSH: 查看项目记忆"
+  "command.showMemory": "DSH: 查看项目记忆",
+  "config.cliPath": "dsh 可执行文件或 @deepseek-ai/dsh 的 lib/bin.js 的绝对路径。留空 = 自动从 PATH 解析。",
+  "config.extraArgs": "追加到 dsh 启动命令的额外参数（在 --profile headless 之后，例如 --patch <path>）。",
+  "config.timeoutSeconds": "单次任务的超时秒数，超时自动取消。",
+  "config.environment": "传给 dsh 子进程的额外环境变量（例如 API Key）。",
+  "config.historyMessages": "折叠进任务文本的最近聊天消息数（多轮连续用）。设为 0 禁用历史注入。",
+  "config.maxMessageChars": "折叠进任务文本的单条历史消息最大字符数。",
+  "config.streamProgress": "实时流式展示思维链与工具调用（tail DSH 会话事件日志）；关闭 = 只显示最终回答。",
+  "config.debugStreaming": "调试：在每次回答末尾附加流式诊断（是否找到会话日志、解析了多少事件）。",
+  "config.permissionMode": "传给 dsh 的沙箱权限模式（DSH_PERMISSION_MODE）。read-only：只读；workspace-write：可在工作区内读写；danger-full-access：完全放开并自动批准（仅当你完全信任 dsh 与任务时使用）。"
 }

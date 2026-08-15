@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import * as fs from "fs";
 import {
   FEATURED_PLUGINS,
   PluginInfo,
@@ -12,11 +11,12 @@ import {
   isInstalled,
   installSourceKind,
   githubShortToHttps,
-  profilePackageJsonPath,
+  resolveInstalledName,
 } from "./pluginManager";
 import { ResolvedCli } from "./cli";
 import { t } from "./i18n";
 import { checkPluginHeadless, HeadlessCheckResult } from "./headlessCheck";
+import { PluginWatch } from "./pluginWatch";
 
 /** 插件中心免责声明（醒目、诚恳、严谨，防止第三方插件在 headless 下不生效引发纠纷）。 */
 const COMPAT_NOTICE = t(
@@ -31,8 +31,12 @@ interface PluginPickItem extends vscode.QuickPickItem {
   sourceKind?: string;
 }
 
+/** 手动安装后用于把包名标记为「已检测」的 context（openPluginCenter 注入；避免哨兵重复通知）。 */
+let watchContext: vscode.ExtensionContext | undefined;
+
 /** 插件中心：浏览精选插件、查看已装状态、一键安装/卸载。 */
-export async function openPluginCenter(cliProvider: () => Promise<ResolvedCli>): Promise<void> {
+export async function openPluginCenter(cliProvider: () => Promise<ResolvedCli>, context?: vscode.ExtensionContext): Promise<void> {
+  if (context) watchContext = context;
   try {
     const cli = await cliProvider();
     await showPluginBrowser(cli);
@@ -216,9 +220,12 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
       : { npm: t("npm 包", "npm package"), github: t("GitHub 仓库", "GitHub repo"), "git-url": t("git URL", "git URL"), url: t("URL", "URL"), path: t("本地路径", "local path") }[detected];
 
   // 本地路径：pnpm 在 profile 目录执行，相对路径会相对 ~/.dsh/profiles/headless 解析——
-  // 这里把相对路径基于当前工作区转成绝对路径，避免装到错误位置
+  // 这里把相对路径基于当前工作区转成绝对路径，避免装到错误位置。
+  // 若用户显式选择了「本地路径」但输入的是裸名（如 my-plugin，无 ./ 或盘符），
+  // 也按本地路径处理，而不是静默当成 npm 包安装。
   let finalSource = resolvedSource;
-  if (detected === "path" && !path.isAbsolute(resolvedSource)) {
+  const isPathIntent = kind === "path";
+  if ((detected === "path" || isPathIntent) && !path.isAbsolute(finalSource)) {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) {
       void vscode.window.showWarningMessage(
@@ -226,7 +233,7 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
       );
       return;
     }
-    finalSource = path.resolve(root, resolvedSource);
+    finalSource = path.resolve(root, finalSource);
   }
 
   const confirm = await vscode.window.showWarningMessage(
@@ -244,7 +251,9 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
     async () => {
       const r = await runPluginCommand(cli, "add", finalSource);
       if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
-      const c = await checkPluginHeadless(cli, installedNameForSpec(finalSource));
+      const realName = resolveInstalledName(finalSource);
+      const c = await checkPluginHeadless(cli, realName);
+      if (watchContext) void new PluginWatch(watchContext).markChecked([realName]);
       return { res: r, check: c };
     }
   );
@@ -263,21 +272,6 @@ function compatCheckLabel(check: HeadlessCheckResult): string {
     default:
       return t("❌ 兼容性检测失败", "❌ Compatibility check failed");
   }
-}
-
-/** 通过依赖 spec（URL / github 短名 / 本地路径）反查 profile 里真实的包名，
- * 供兼容性检测匹配 dump-config 的 `# == <包名>` 来源块。 */
-function installedNameForSpec(spec: string): string {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(profilePackageJsonPath(), "utf8"));
-    const deps = pkg.dependencies ?? {};
-    for (const [name, s] of Object.entries(deps)) {
-      if (String(s) === spec || String(s).includes(spec) || spec.includes(name)) return name;
-    }
-  } catch {
-    /* ignore */
-  }
-  return spec;
 }
 
 /** 展示插件操作结果。可靠性策略：
@@ -363,6 +357,7 @@ async function installPlugin(cli: ResolvedCli, packageName: string): Promise<voi
       const r = await runPluginCommand(cli, "add", packageName);
       if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
       const c = await checkPluginHeadless(cli, packageName);
+      if (watchContext) void new PluginWatch(watchContext).markChecked([packageName]);
       return { res: r, check: c };
     }
   );

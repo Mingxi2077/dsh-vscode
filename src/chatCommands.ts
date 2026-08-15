@@ -20,7 +20,7 @@ import {
   writeProviderToSettings,
 } from "./settingsEditor";
 import { listSkills } from "./skills";
-import { t, tf } from "./i18n";
+import { t, tf, isZh } from "./i18n";
 
 /** slash 命令需要的最小宿主能力。 */
 export interface ChatCommandHost {
@@ -124,19 +124,19 @@ export function handleSlashCommand(host: ChatCommandHost, raw: string): void {
       break;
     }
     case "/provider":
-      void pickProvider(host);
+      void pickProvider(host).catch((e) => reportAsyncError(host, e));
       break;
     case "/model":
-      void pickModel(host);
+      void pickModel(host).catch((e) => reportAsyncError(host, e));
       break;
     case "/effort":
-      void pickEffort(host);
+      void pickEffort(host).catch((e) => reportAsyncError(host, e));
       break;
     case "/skills":
-      void pickSkills(host);
+      void pickSkills(host).catch((e) => reportAsyncError(host, e));
       break;
     case "/compact":
-      void compactConversation(host);
+      void compactConversation(host).catch((e) => reportAsyncError(host, e));
       break;
     case "/status":
       host.post({ type: "appendMessage", message: host.systemMessage(host.statusLine()) });
@@ -150,6 +150,12 @@ export function handleSlashCommand(host: ChatCommandHost, raw: string): void {
 }
 
 // ---------------------------------------------------------------- 提供商 / 模型 / 强度
+
+/** 异步斜杠命令的兜底错误报告（避免 unhandledRejection）。 */
+function reportAsyncError(host: ChatCommandHost, e: unknown): void {
+  const message = e instanceof Error ? e.message : String(e);
+  host.post({ type: "appendMessage", message: host.systemMessage(tf(t("命令执行出错：{0}", "Command failed: {0}"), message)) });
+}
 
 async function pickProvider(host: ChatCommandHost): Promise<void> {
   const raw = readSettingsFile();
@@ -268,48 +274,48 @@ async function selectProvider(host: ChatCommandHost, provider: ProviderInfo): Pr
 /** 手动添加自定义提供商向导（自建网关 / 中转）。 */
 async function addCustomProvider(host: ChatCommandHost): Promise<void> {
   const displayName = await vscode.window.showInputBox({
-    prompt: "自定义提供商显示名称（如：LMU AI GPT Relay）",
+    prompt: t("自定义提供商显示名称（如：LMU AI GPT Relay）", "Custom provider display name (e.g. LMU AI GPT Relay)"),
     ignoreFocusOut: true,
-    validateInput: (v) => (v && v.trim().length > 0 ? undefined : "不能为空"),
+    validateInput: (v) => (v && v.trim().length > 0 ? undefined : t("不能为空", "cannot be empty")),
   });
   if (!displayName) return;
 
   const id = await vscode.window.showInputBox({
-    prompt: "提供商 id（小写字母数字，如 lmuai）",
+    prompt: t("提供商 id（小写字母数字，如 lmuai）", "Provider id (lowercase alphanumeric, e.g. lmuai)"),
     ignoreFocusOut: true,
     value: displayName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-    validateInput: (v) => (v && /^[a-z0-9][a-z0-9_-]*$/.test(v.trim()) ? undefined : "需小写字母数字开头，可含 - _"),
+    validateInput: (v) => (v && /^[a-z0-9][a-z0-9_-]*$/.test(v.trim()) ? undefined : t("需小写字母数字开头，可含 - _", "must start with lowercase alphanumeric; may contain - _")),
   });
   if (!id) return;
 
   const api = await vscode.window.showQuickPick(
     [
-      { label: "OpenAI 兼容（openai-completions）", description: "大多数中转/网关", api: "openai-completions" },
-      { label: "Anthropic 协议（anthropic-messages）", description: "Claude 直连/兼容网关", api: "anthropic-messages" },
+      { label: t("OpenAI 兼容（openai-completions）", "OpenAI-compatible (openai-completions)"), description: t("大多数中转/网关", "Most relays/gateways"), api: "openai-completions" },
+      { label: t("Anthropic 协议（anthropic-messages）", "Anthropic protocol (anthropic-messages)"), description: t("Claude 直连/兼容网关", "Claude direct / compatible gateways"), api: "anthropic-messages" },
     ],
-    { placeHolder: "选择 API 协议" }
+    { placeHolder: t("选择 API 协议", "Choose API protocol") }
   );
   if (!api) return;
 
   const baseURL = await vscode.window.showInputBox({
-    prompt: "Base URL（如 https://api.lmuai.com/v1）",
+    prompt: t("Base URL（如 https://api.lmuai.com/v1）", "Base URL (e.g. https://api.lmuai.com/v1)"),
     ignoreFocusOut: true,
     placeHolder: "https://…",
-    validateInput: (v) => (v && v.trim().length > 0 ? undefined : "不能为空"),
+    validateInput: (v) => (v && v.trim().length > 0 ? undefined : t("不能为空", "cannot be empty")),
   });
   if (!baseURL) return;
 
   const envName = await vscode.window.showInputBox({
-    prompt: "API Key 环境变量名（如 LMUAI_API_KEY）",
+    prompt: t("API Key 环境变量名（如 LMUAI_API_KEY）", "API key env var name (e.g. LMUAI_API_KEY)"),
     ignoreFocusOut: true,
     value: (id.toUpperCase() + "_API_KEY").replace(/-/g, "_"),
-    validateInput: (v) => (v && /^[A-Za-z_][A-Za-z0-9_]*$/.test(v.trim()) ? undefined : "需合法环境变量名"),
+    validateInput: (v) => (v && /^[A-Za-z_][A-Za-z0-9_]*$/.test(v.trim()) ? undefined : t("需合法环境变量名", "must be a valid env var name")),
   });
   if (!envName) return;
 
   // 可选：预填模型
   const modelsRaw = await vscode.window.showInputBox({
-    prompt: "模型 id 列表（逗号分隔，可留空后用 /model 手动输入）",
+    prompt: t("模型 id 列表（逗号分隔，可留空后用 /model 手动输入）", "Model id list (comma-separated; leave empty to pick via /model later)"),
     ignoreFocusOut: true,
     placeHolder: "gpt-5.5, gpt-5.4",
   });
@@ -325,22 +331,22 @@ async function addCustomProvider(host: ChatCommandHost): Promise<void> {
     host.post({ type: "appendMessage", message: host.systemMessage(res.message) });
     return;
   }
-  host.post({ type: "appendMessage", message: host.systemMessage(`已添加自定义提供商 ${displayName}（${res.message}）`) });
+  host.post({ type: "appendMessage", message: host.systemMessage(tf(t("已添加自定义提供商 {0}（{1}）", "Added custom provider {0} ({1})"), displayName, res.message)) });
 
   // 请求输入 API Key（存系统密钥链）
   const act = await vscode.window.showQuickPick(
     [
-      { label: "设置 API Key", description: "保存在系统密钥链" },
-      { label: "跳过", description: "使用环境变量 / DSH 凭证" },
+      { label: t("设置 API Key", "Set API key"), description: t("保存在系统密钥链", "Saved in the system keychain"), action: "set-key" },
+      { label: t("跳过", "Skip"), description: t("使用环境变量 / DSH 凭证", "Use env var / DSH credentials"), action: "skip" },
     ],
-    { placeHolder: `${displayName} 的 API Key（${envName.trim()}）` }
+    { placeHolder: `${displayName} ${t("的 API Key", "API key")}（${envName.trim()}）` }
   );
-  if (act?.label.startsWith("设置")) {
+  if (act?.action === "set-key") {
     const key = await vscode.window.showInputBox({
-      prompt: `输入 API Key（${envName.trim()}）`,
+      prompt: `API Key（${envName.trim()}）`,
       password: true,
       ignoreFocusOut: true,
-      validateInput: (v) => (v && v.trim().length > 0 ? undefined : "不能为空"),
+      validateInput: (v) => (v && v.trim().length > 0 ? undefined : t("不能为空", "cannot be empty")),
     });
     if (key) await host.setEnvSecret(envName.trim(), key.trim());
   }
@@ -353,7 +359,7 @@ async function addCustomProvider(host: ChatCommandHost): Promise<void> {
   await host.setSelection(sel);
   host.post({
     type: "appendMessage",
-    message: host.systemMessage(`提供商已切换：${displayName}（${id.trim()}）。用 /model 选模型。`),
+    message: host.systemMessage(tf(t("提供商已切换：{0}（{1}）。用 /model 选模型。", "Provider switched: {0} ({1}). Use /model to pick a model."), displayName, id.trim())),
   });
 }
 
@@ -363,27 +369,27 @@ async function pickModel(host: ChatCommandHost): Promise<void> {
   if (models.length === 0) {
     host.post({
       type: "appendMessage",
-      message: host.systemMessage(`提供商 ${providerId} 没有可列举的模型，可手动输入模型名。`),
+      message: host.systemMessage(tf(t("提供商 {0} 没有可列举的模型，可手动输入模型名。", "Provider {0} has no enumerable models; you can type a model name manually."), providerId)),
     });
   }
   const input = await vscode.window.showQuickPick(
     [
       ...models.map((m) => ({ label: m, description: undefined as string | undefined, model: m })),
-      { label: "$(add) 手动输入模型名…", description: undefined, model: undefined },
+      { label: "$(add) " + t("手动输入模型名…", "Type a model name…"), description: undefined, model: undefined },
     ],
-    { placeHolder: `选择模型（当前提供商 ${providerId}）` }
+    { placeHolder: tf(t("选择模型（当前提供商 {0}）", "Pick a model (current provider {0})"), providerId) }
   );
   let model = input?.model;
   if (input && input.model === undefined) {
     model = await vscode.window.showInputBox({
-      prompt: "输入模型名",
+      prompt: t("输入模型名", "Enter model name"),
       ignoreFocusOut: true,
-      validateInput: (v) => (v && v.trim().length > 0 ? undefined : "不能为空"),
+      validateInput: (v) => (v && v.trim().length > 0 ? undefined : t("不能为空", "cannot be empty")),
     });
   }
   if (!model) return;
   await host.setSelection({ ...host.selection, provider: providerId, model });
-  host.post({ type: "appendMessage", message: host.systemMessage(`模型已切换：${model}`) });
+  host.post({ type: "appendMessage", message: host.systemMessage(tf(t("模型已切换：{0}", "Model switched: {0}"), model)) });
 }
 
 async function pickEffort(host: ChatCommandHost): Promise<void> {
@@ -391,14 +397,14 @@ async function pickEffort(host: ChatCommandHost): Promise<void> {
   const pick = await vscode.window.showQuickPick(
     REASONING_EFFORTS.map((e) => ({
       label: e,
-      description: e === current ? "当前" : undefined,
+      description: e === current ? t("当前", "current") : undefined,
       effort: e,
     })),
-    { placeHolder: "选择思维强度" }
+    { placeHolder: t("选择思维强度", "Choose reasoning effort") }
   );
   if (!pick) return;
   await host.setSelection({ ...host.selection, provider: host.selection?.provider ?? DEEPSEEK_PROVIDER.id, model: host.selection?.model ?? "", reasoningEffort: pick.effort });
-  host.post({ type: "appendMessage", message: host.systemMessage(`思维强度已切换：${pick.effort}`) });
+  host.post({ type: "appendMessage", message: host.systemMessage(tf(t("思维强度已切换：{0}", "Reasoning effort switched: {0}"), pick.effort)) });
 }
 
 // ---------------------------------------------------------------- 技能
@@ -409,7 +415,10 @@ async function pickSkills(host: ChatCommandHost): Promise<void> {
     host.post({
       type: "appendMessage",
       message: host.systemMessage(
-        "当前没有可用技能。技能目录：~/.dsh/skills/ 或 <项目>/.dsh/skills/，每个技能一个子目录，内含 SKILL.md（frontmatter: name/description）。"
+        t(
+          "当前没有可用技能。技能目录：~/.dsh/skills/ 或 <项目>/.dsh/skills/，每个技能一个子目录，内含 SKILL.md（frontmatter: name/description）。",
+          "No skills available. Skill directories: ~/.dsh/skills/ or <project>/.dsh/skills/, one subdirectory per skill containing a SKILL.md (frontmatter: name/description)."
+        )
       ),
     });
     return;
@@ -422,14 +431,14 @@ async function pickSkills(host: ChatCommandHost): Promise<void> {
       picked: host.enabledSkills.includes(s.name),
       skill: s,
     })),
-    { canPickMany: true, placeHolder: "选择要启用的技能（可多选）" }
+    { canPickMany: true, placeHolder: t("选择要启用的技能（可多选）", "Choose skills to enable (multi-select)") }
   );
   if (!picks) return;
   host.setEnabledSkills(picks.map((p) => p.skill.name));
   host.post({
     type: "appendMessage",
     message: host.systemMessage(
-      picks.length > 0 ? `已启用技能：${picks.map((p) => p.skill.name).join("、")}` : "已清空技能选择"
+      picks.length > 0 ? tf(t("已启用技能：{0}", "Skills enabled: {0}"), picks.map((p) => p.skill.name).join(", ")) : t("已清空技能选择", "Skill selection cleared")
     ),
   });
 }
@@ -437,23 +446,26 @@ async function pickSkills(host: ChatCommandHost): Promise<void> {
 // ---------------------------------------------------------------- 压缩
 
 async function compactConversation(host: ChatCommandHost): Promise<void> {
-  host.post({ type: "appendMessage", message: host.systemMessage("正在压缩会话…（由 DSH 生成摘要）") });
-  const task =
-    "你是会话压缩器。把下面的对话压缩成一份结构化摘要（中文，300-500 字），必须保留：\n" +
-    "1) 任务目标与当前进展；2) 已确认的关键决策和结论；3) 用户偏好与约束；4) 待办事项；5) 重要的代码/命令/文件路径。\n" +
-    "只输出摘要本身，不要额外说明。\n\n--- 对话记录 ---\n" + host.getTranscript();
+  host.post({ type: "appendMessage", message: host.systemMessage(t("正在压缩会话…（由 DSH 生成摘要）", "Compacting conversation… (summary generated by DSH)")) });
+  const task = isZh()
+    ? "你是会话压缩器。把下面的对话压缩成一份结构化摘要（中文，300-500 字），必须保留：\n" +
+      "1) 任务目标与当前进展；2) 已确认的关键决策和结论；3) 用户偏好与约束；4) 待办事项；5) 重要的代码/命令/文件路径。\n" +
+      "只输出摘要本身，不要额外说明。\n\n--- 对话记录 ---\n" + host.getTranscript()
+    : "You are a conversation compactor. Compress the conversation below into a structured summary (English, 300-500 words) that keeps:\n" +
+      "1) task goal and current progress; 2) confirmed key decisions and conclusions; 3) user preferences and constraints; 4) open todos; 5) important code/commands/file paths.\n" +
+      "Output only the summary, no extra explanation.\n\n--- Conversation ---\n" + host.getTranscript();
   const summary = await host.runHeadlessTask(task);
   if (!summary) {
     host.post({
       type: "appendMessage",
-      message: host.systemMessage("压缩失败（dsh 未返回结果）。可重试或继续使用原会话。"),
+      message: host.systemMessage(t("压缩失败（dsh 未返回结果）。可重试或继续使用原会话。", "Compaction failed (dsh returned no result). Retry or continue with the original conversation.")),
     });
     return;
   }
   host.replaceSessionWithSummary(summary);
   host.post({
     type: "appendMessage",
-    message: host.systemMessage(`会话已压缩，历史替换为摘要：\n${summary}`),
+    message: host.systemMessage(tf(t("会话已压缩，历史替换为摘要：\n{0}", "Conversation compacted; history replaced with summary:\n{0}"), summary)),
   });
 }
 
@@ -461,7 +473,7 @@ async function compactConversation(host: ChatCommandHost): Promise<void> {
 export function postMemory(host: ChatCommandHost): void {
   const content = host.memory.read().trim();
   const body = content
-    ? content.slice(0, 4000) + (content.length > 4000 ? "\n…(内容过长，仅显示开头)" : "")
-    : "（项目长期记忆为空，可用 /remember 添加）";
-  host.post({ type: "appendMessage", message: host.systemMessage(`项目长期记忆：\n${body}`) });
+    ? content.slice(0, 4000) + (content.length > 4000 ? t("\n…(内容过长，仅显示开头)", "\n…(too long, showing the beginning only)") : "")
+    : t("（项目长期记忆为空，可用 /remember 添加）", "(project memory is empty; use /remember to add)");
+  host.post({ type: "appendMessage", message: host.systemMessage(t("项目长期记忆：\n{0}", "Project long-term memory:\n{0}").replace("{0}", body)) });
 }

@@ -1,6 +1,7 @@
 import { spawn, execFile } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { t, tf } from "./i18n";
 
 /**
  * 解析后的 dsh 启动方式。
@@ -47,7 +48,7 @@ function execFileAsync(
   return new Promise((resolve, reject) => {
     execFile(file, args, { windowsHide: true, timeout: timeoutMs }, (err, stdout, stderr) => {
       if (err) {
-        reject(new Error(`${file} 执行失败: ${(stderr || err.message).trim()}`));
+        reject(new Error(tf(t("{0} 执行失败: {1}", "{0} failed: {1}"), file, (stderr || err.message).trim())));
       } else {
         resolve(stdout);
       }
@@ -119,7 +120,10 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
   }
 
   throw new Error(
-    "未找到 dsh 命令。请确认已全局安装 @deepseek-ai/dsh（npm i -g @deepseek-ai/dsh），或在设置中配置 dsh-harness-vscode.cliPath。"
+    t(
+      "未找到 dsh 命令。请确认已全局安装 @deepseek-ai/dsh（npm i -g @deepseek-ai/dsh），或在设置中配置 dsh-harness-vscode.cliPath。",
+      'dsh command not found. Install @deepseek-ai/dsh globally (npm i -g @deepseek-ai/dsh), or set dsh-harness-vscode.cliPath in settings.'
+    )
   );
 }
 
@@ -146,7 +150,7 @@ export function runCliVersion(cli: ResolvedCli): Promise<string> {
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error("查询 dsh 版本超时"));
+      reject(new Error(t("查询 dsh 版本超时", "Timed out querying the dsh version")));
     }, 15000);
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
@@ -156,14 +160,14 @@ export function runCliVersion(cli: ResolvedCli): Promise<string> {
     });
     child.on("error", (err) => {
       clearTimeout(timer);
-      reject(new Error(`无法启动 dsh：${err.message}`));
+      reject(new Error(tf(t("无法启动 dsh：{0}", "Failed to launch dsh: {0}"), err.message)));
     });
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code === 0) {
         resolve(stdout.trim());
       } else {
-        reject(new Error(`dsh --version 失败(exit ${code}): ${stderr.trim() || stdout.trim()}`));
+        reject(new Error(tf(t("dsh --version 失败(exit {0}): {1}", "dsh --version failed (exit {0}): {1}"), code ?? "?", stderr.trim() || stdout.trim())));
       }
     });
   });
@@ -180,11 +184,17 @@ export function runDsh(
     if (cli.kind === "entry" && (args[0] === cli.node || args[0] === cli.entry)) {
       resolve({
         stdout: "",
-        stderr: `内部错误：spawn 参数包含了可执行文件自身（${args[0]}）`,
+        stderr: tf(t("内部错误：spawn 参数包含了可执行文件自身（{0}）", "Internal error: spawn args contain the executable itself ({0})"), args[0]),
         code: 1,
         signal: null,
         timedOut: false,
       });
+      return;
+    }
+    // spawn 前检查：取消若发生在 CLI/环境解析期间，signal 已 aborted——直接返回取消结果，
+    // 避免 spawn 后新增的 abort 监听永不触发、子进程无法被杀（仅靠超时兜底）
+    if (options.signal?.aborted) {
+      resolve({ stdout: "", stderr: "", code: null, signal: "SIGTERM", timedOut: false });
       return;
     }
     const child = spawn(cli.kind === "entry" ? cli.node : cli.command, args, {
@@ -225,7 +235,7 @@ export function runDsh(
       stderr += chunk.toString("utf8");
     });
     child.on("error", (err) => {
-      stderr += `spawn 失败: ${err.message}\n`;
+      stderr += tf(t("spawn 失败: {0}", "spawn failed: {0}"), err.message) + "\n";
       finish(null, null);
     });
     child.on("close", (code, signal) => {
