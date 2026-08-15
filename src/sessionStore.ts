@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { t } from "./i18n";
+import { AgentModeId, isValidAgentMode } from "./agentModes";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -27,6 +28,11 @@ export interface ChatSession {
   messages: ChatMessage[];
   /** DSH 生成的会话标题（session/title 事件）；存在时不再用首条消息截断覆盖。 */
   dshTitle?: string;
+  /**
+   * 本会话的 Agent 预设模式（DSH 规则：会话创建时确定，开始后锁定不可改）。
+   * 缺失表示该会话按 headless 默认组装运行（与旧版本一致）。
+   */
+  mode?: AgentModeId;
 }
 
 export interface SessionSummary {
@@ -112,6 +118,9 @@ export class SessionStore {
         }));
       if (typeof parsed.title !== "string" || !parsed.title) {
         parsed.title = t("新会话", "New session");
+      }
+      if (parsed.mode !== undefined && !isValidAgentMode(parsed.mode)) {
+        parsed.mode = undefined;
       }
       if (typeof parsed.createdAt !== "number") parsed.createdAt = Date.now();
       if (typeof parsed.updatedAt !== "number") parsed.updatedAt = Date.now();

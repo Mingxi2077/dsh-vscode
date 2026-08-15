@@ -1,4 +1,5 @@
 import * as crypto from "crypto";
+import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { ResolvedCli, buildSpawnArgs, runDsh, normalizeExtraArgs } from "./cli";
@@ -24,7 +25,7 @@ import {
 import { refreshSidebarStatus } from "./sidebar";
 import { resolveExistingInsideRoot } from "./pathSafety";
 import { isAnyTaskActive, setTaskActive } from "./taskGuard";
-import { agentModeById, resolveAgentModePatch } from "./agentModes";
+import { AgentModeId, agentModeById, resolveAgentModePatch } from "./agentModes";
 import { t, tf, isZh } from "./i18n";
 
 /** 用户在输入区上方挂载的上下文块（选中代码 / 文件片段）。 */
@@ -213,7 +214,14 @@ export class ChatPanel {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       messages: [],
+      // DSH 规则：预设在新会话创建时确定；这里继承当前工作区选择，任务开始后锁定
+      mode: this.selection?.mode,
     };
+  }
+
+  /** DSH 语义：只有用户/助手消息会让会话“开始”；slash 命令产生的系统消息不算。 */
+  private sessionStarted(session: ChatSession = this.session): boolean {
+    return session.messages.some((m) => m.role === "user" || m.role === "assistant");
   }
 
   /** 后台任务（/compact）进行中时禁止切换会话，防止压缩结果套到新会话上。 */
@@ -244,6 +252,7 @@ export class ChatPanel {
     this.post({ type: "sessionChanged", sessionId: this.session.id, title: this.session.title });
     this.post({ type: "contextChanged", blocks: [] });
     this.post({ type: "selectionChanged", selection: this.selection, effort: this.effectiveEffort() });
+    this.post({ type: "modeChanged", mode: this.session.mode });
     this.post({ type: "usage", usage: null });
     this.post({ type: "resetMessages" });
   }
@@ -257,6 +266,7 @@ export class ChatPanel {
     this.panel.title = `DSH — ${this.session.title}`;
     this.post({ type: "sessionChanged", sessionId: this.session.id, title: this.session.title });
     this.post({ type: "contextChanged", blocks: [] });
+    this.post({ type: "modeChanged", mode: this.session.mode });
     this.post({ type: "usage", usage: null });
     this.post({ type: "resetMessages" });
   }
@@ -274,6 +284,7 @@ export class ChatPanel {
     this.lastUsage = undefined;
     this.post({ type: "sessionChanged", sessionId: this.session.id, title: this.session.title });
     this.post({ type: "contextChanged", blocks: [] });
+    this.post({ type: "modeChanged", mode: loaded.mode });
     this.post({ type: "usage", usage: null });
     this.post({ type: "resetMessages" });
     this.post({ type: "appendMessages", messages: loaded.messages });
@@ -425,7 +436,7 @@ export class ChatPanel {
       busy: this.busy,
       folder: this.folder.uri.fsPath,
       selection: this.selection,
-      mode: this.selection?.mode,
+      mode: this.session.mode,
       effort: this.effectiveEffort(),
       usage: this.lastUsage,
       skills: this.enabledSkills,
@@ -470,6 +481,12 @@ export class ChatPanel {
     // 不会污染新会话（0.9.8 已修取消竞态，这里补齐“结果归属”竞态）。
     const taskSession = this.session;
     const taskStore = this.store;
+
+    // DSH 预设规则：会话创建时确定模式；blank 会话继承当前选择，首个任务开始时锁定。
+    // 之后即使 /mode 的选择被改动（正常流程会拒绝），本会话仍用自己创建时的模式。
+    if (!this.sessionStarted(taskSession)) {
+      taskSession.mode = this.selection?.mode;
+    }
 
     const userMsg: ChatMessage = { id: UUID(), role: "user", content: trimmed, ts: Date.now() };
     taskSession.messages.push(userMsg);
@@ -558,24 +575,26 @@ export class ChatPanel {
         // 附加模型选择补丁（/provider /model /effort）
         extraArgs.push("--patch", modelPatch);
       }
-      if (selection?.mode) {
-        // 附加 DSH Agent 预设（标准 / PTC / 极简 / 创造）：直接叠加预设目录的 agent.cordis.yml
-        const modeRes = resolveAgentModePatch(cli, selection.mode);
+      if (taskSession.mode) {
+        // 附加 DSH Agent 预设（标准 / PTC / 极简 / 创造）。
+        // 必须用 taskSession.mode（会话创建时锁定），并用快照保证会话生命周期内组成不变。
+        const modeRes = this.sessionModePatch(cli, taskSession);
         if (modeRes.patch) {
           extraArgs.push("--patch", modeRes.patch);
-        } else if (modeRes.error) {
-          const modeInfo = agentModeById(selection.mode);
+        } else {
+          // DSH 语义：预设损坏/不可用时拒绝创建会话，而不是偷偷换成默认组装
+          const modeInfo = agentModeById(taskSession.mode);
           this.log?.(`agent mode patch unavailable: ${modeRes.error}`);
-          this.postIfCurrent(taskSession, {
-            type: "appendMessage",
-            message: this.systemMessage(
-              tf(
-                t("警告：{0}的预设文件不可用（{1}），本次任务将按默认组装运行。", "Warning: the {0} preset file is unavailable ({1}); this task will run with the default composition."),
-                modeInfo ? t(modeInfo.name, modeInfo.nameEn) : selection.mode,
-                modeRes.error
-              )
-            ),
-          });
+          return this.systemMessage(
+            tf(
+              t(
+                "无法启动任务：本会话的 Agent 模式「{0}」预设文件不可用（{1}）。请 /clear 新建会话并改用其它模式。",
+                "Cannot start the task: the preset file for this session's agent mode \"{0}\" is unavailable ({1}). Run /clear to start a new session and choose another mode."
+              ),
+              modeInfo ? t(modeInfo.name, modeInfo.nameEn) : taskSession.mode,
+              modeRes.error ?? ""
+            )
+          );
         }
       }
       const args = buildSpawnArgs(cli, extraArgs, taskText);
@@ -769,6 +788,38 @@ export class ChatPanel {
     refreshSidebarStatus();
   }
 
+  /** 当前会话是否允许切换模式：仅 blank session 可切（DSH agent-preset.select 语义）。 */
+  canSwitchMode(): boolean {
+    return !this.sessionStarted();
+  }
+
+  /**
+   * 会话预设组成文件：DSH 在会话创建时读取一次并在会话生命周期内保持不变。
+   * headless 每任务一个进程，所以首个任务把 agent.cordis.yml 快照到 globalStorage，
+   * 后续任务始终用快照；快照不存在才解析当前 dsh 安装目录。
+   */
+  private sessionModePatch(cli: ResolvedCli, session: ChatSession): { patch?: string; error?: string } {
+    if (!session.mode) return {};
+    const snapshot = path.join(this.globalStorageDir, "agent-modes", `${session.id}.yml`);
+    if (fs.existsSync(snapshot)) return { patch: snapshot };
+    const resolved = resolveAgentModePatch(cli, session.mode);
+    if (!resolved.patch) return { error: resolved.error };
+    try {
+      fs.mkdirSync(path.dirname(snapshot), { recursive: true });
+      fs.copyFileSync(resolved.patch, snapshot);
+      return { patch: snapshot };
+    } catch {
+      // 快照失败仍可用原文件跑本次任务
+      return { patch: resolved.patch };
+    }
+  }
+
+  /** blank 会话内切换模式：同步更新当前会话，使其在首个任务时按新预设创建。 */
+  setSessionMode(mode: AgentModeId | undefined): void {
+    this.session.mode = mode;
+    this.post({ type: "modeChanged", mode: this.session.mode });
+  }
+
   setEnabledSkills(names: string[]): void {
     this.enabledSkills = names;
   }
@@ -809,10 +860,14 @@ export class ChatPanel {
       const extraArgs = normalizeExtraArgs(cfg.get("extraArgs", []));
       extraArgs.push("--patch", path.join(this.extensionPath, "patch", "stream.patch.yml"));
       if (modelPatch) extraArgs.push("--patch", modelPatch);
-      if (selection?.mode) {
-        const modeRes = resolveAgentModePatch(cli, selection.mode);
-        if (modeRes.patch) extraArgs.push("--patch", modeRes.patch);
-        else this.log?.(`runHeadlessTask mode patch unavailable: ${modeRes.error}`);
+      if (this.session.mode) {
+        const modeRes = this.sessionModePatch(cli, this.session);
+        if (modeRes.patch) {
+          extraArgs.push("--patch", modeRes.patch);
+        } else {
+          this.log?.(`runHeadlessTask mode patch unavailable: ${modeRes.error}`);
+          return null;
+        }
       }
       const args = buildSpawnArgs(cli, extraArgs, task);
       const env = await this.envProvider();
@@ -860,6 +915,8 @@ export class ChatPanel {
       createdAt: this.session.createdAt,
       updatedAt: Date.now(),
       messages: [compacted],
+      mode: this.session.mode,
+      dshTitle: this.session.dshTitle,
     };
     this.store.save(this.session);
     this.post({ type: "resetMessages" });
@@ -879,7 +936,7 @@ export class ChatPanel {
     const effort = this.effectiveEffort() ?? t("未设置", "not set");
     const skills = this.enabledSkills.length ? this.enabledSkills.join(t("、", ", ")) : t("无", "none");
     const sandbox = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
-    const modeInfo = agentModeById(sel?.mode);
+    const modeInfo = agentModeById(this.session.mode);
     const agentMode = modeInfo ? t(modeInfo.name, modeInfo.nameEn) : t("默认组装", "default composition");
     const usage = this.lastUsage
       ? "\n" +
@@ -954,7 +1011,7 @@ export class ChatPanel {
           (this.effectiveEffort(sel) ? t("，思维强度 {0}", ", effort {0}").replace("{0}", this.effectiveEffort(sel)!) : "")
       );
     }
-    const modeInfo = agentModeById(sel?.mode);
+    const modeInfo = agentModeById(session.mode);
     if (modeInfo) {
       extraSections.push(
         t("本会话 Agent 模式：{0}（{1}）", "Session agent mode: {0} ({1})")

@@ -63,7 +63,7 @@ class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
       })
     );
     items.push(
-      new StatusItem(`${t("Agent 模式", "Agent mode")}：${modeInfo ? t(modeInfo.name, modeInfo.nameEn) : t("默认组装", "default composition")}`, {
+      new StatusItem(`${t("Agent 模式（新会话）", "Agent mode (new session)")}：${modeInfo ? t(modeInfo.name, modeInfo.nameEn) : t("默认组装", "default composition")}`, {
         icon: "symbol-class",
       })
     );

@@ -36,6 +36,10 @@ export interface ChatCommandHost {
   folderPath: string;
   selection: ModelSelection | undefined;
   setSelection(sel: ModelSelection | undefined): Promise<void>;
+  /** 当前会话是否 blank（DSH 规则：Agent 预设只允许在 blank 会话切换）。 */
+  canSwitchMode(): boolean;
+  /** blank 会话内更新当前会话的预设模式（下个任务生效并锁定）。 */
+  setSessionMode(mode: AgentModeId | undefined): void;
   enabledSkills: string[];
   setEnabledSkills(names: string[]): void;
   getEnvSecret(name: string): Promise<string | undefined>;
@@ -442,6 +446,19 @@ async function pickEffort(host: ChatCommandHost): Promise<void> {
 // ---------------------------------------------------------------- Agent 模式
 
 async function pickAgentMode(host: ChatCommandHost): Promise<void> {
+  // DSH 原生规则：会话一旦开始，Agent 预设固定；扩展复刻同样语义
+  if (!host.canSwitchMode()) {
+    host.post({
+      type: "appendMessage",
+      message: host.systemMessage(
+        t(
+          "当前会话已经开始，Agent 模式已固定（DSH 规则）。请用 /clear 新建会话后再切换模式。",
+          "This session has already started, so its agent mode is fixed (DSH rule). Run /clear to start a new session, then switch modes."
+        )
+      ),
+    });
+    return;
+  }
   const current = host.selection?.mode;
   const items: (vscode.QuickPickItem & { mode?: AgentModeId })[] = [
     { label: t("默认组装", "Default composition"), description: t("跟随 headless 默认插件组装", "Use the default headless composition"), mode: undefined },
@@ -475,11 +492,17 @@ async function pickAgentMode(host: ChatCommandHost): Promise<void> {
     reasoningEffort: host.selection?.reasoningEffort,
     mode: selected,
   });
+  // 当前还是 blank 会话：同步更新本会话的创建预设，首个任务开始后锁定
+  host.setSessionMode(selected);
   host.post({
     type: "appendMessage",
     message: host.systemMessage(
       selected
-        ? tf(t("Agent 模式已切换：{0}（{1}）。下次任务生效。", "Agent mode switched to {0} ({1}). Takes effect on the next task."), info ? t(info.name, info.nameEn) : selected, info ? t(info.description, info.descriptionEn) : "")
+        ? tf(
+            t("Agent 模式已切换：{0}（{1}）。将在下个任务开始时固定到本会话。", "Agent mode switched to {0} ({1}). It will be fixed to this session when the next task starts."),
+            info ? t(info.name, info.nameEn) : selected,
+            info ? t(info.description, info.descriptionEn) : ""
+          )
         : t("Agent 模式已恢复为默认组装。", "Agent mode reset to the default composition.")
     ),
   });

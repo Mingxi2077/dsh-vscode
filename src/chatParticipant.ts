@@ -7,7 +7,7 @@ import { stableHash } from "./sessionStore";
 import { ProjectMemory } from "./memory";
 import { PluginWatch } from "./pluginWatch";
 import { isAnyTaskActive, setTaskActive } from "./taskGuard";
-import { resolveAgentModePatch } from "./agentModes";
+import { agentModeById, resolveAgentModePatch } from "./agentModes";
 import { isZh, t, tf } from "./i18n";
 
 /**
@@ -102,8 +102,20 @@ function registerParticipant(
     if (modelPatch) extraArgs.push("--patch", modelPatch);
     if (selection?.mode) {
       const modeRes = resolveAgentModePatch(cli, selection.mode);
-      if (modeRes.patch) extraArgs.push("--patch", modeRes.patch);
-      else log?.(`@dsh-agent mode patch unavailable: ${modeRes.error}`);
+      if (modeRes.patch) {
+        extraArgs.push("--patch", modeRes.patch);
+      } else {
+        const modeInfo = agentModeById(selection.mode);
+        log?.(`@dsh-agent mode patch unavailable: ${modeRes.error}`);
+        stream.markdown(
+          tf(
+            t("无法运行 @dsh-agent：Agent 模式「{0}」预设文件不可用（{1}）。请在聊天面板用 /mode 切换模式。", "Cannot run @dsh-agent: the preset file for agent mode \"{0}\" is unavailable ({1}). Switch modes with /mode in the chat panel."),
+            modeInfo ? t(modeInfo.name, modeInfo.nameEn) : selection.mode,
+            modeRes.error ?? ""
+          )
+        );
+        return { metadata: {} };
+      }
     }
 
     const args = buildSpawnArgs(cli, extraArgs, taskText);

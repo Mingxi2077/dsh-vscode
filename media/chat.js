@@ -65,6 +65,7 @@
     folder: "",
     usage: null, // {input, output, cacheRead, reasoning, model, provider, effort}
     selection: null,
+    mode: null, // 当前会话创建时锁定、开始后不可改的 Agent 预设
     effort: "",
     skills: [],
   };
@@ -261,13 +262,14 @@
     if (!bar) return;
     const u = state.usage;
     const sel = state.selection;
-    const modeKey = sel && sel.mode ? ("mode" + sel.mode.charAt(0).toUpperCase() + sel.mode.slice(1)) : "";
-    if (!u && !(sel && sel.mode)) {
+    const currentMode = state.mode !== null ? state.mode : (sel && sel.mode);
+    const modeKey = currentMode ? ("mode" + currentMode.charAt(0).toUpperCase() + currentMode.slice(1)) : "";
+    if (!u && !currentMode) {
       bar.hidden = true;
       return;
     }
     const parts = [];
-    if (modeKey) parts.push(t("agentMode") + " " + (t(modeKey) || sel.mode));
+    if (modeKey) parts.push(t("agentMode") + " " + (t(modeKey) || currentMode));
     if (u) {
       if (u.model) parts.push(t("model") + " " + u.model + (u.effort ? " · " + u.effort : ""));
       else if (sel && sel.model) {
@@ -692,6 +694,7 @@
         state.blocks = msg.blocks || [];
         state.folder = msg.folder || "";
         state.selection = msg.selection || null;
+        state.mode = msg.mode !== undefined ? msg.mode : null;
         state.effort = msg.effort || "";
         state.usage = msg.usage || null;
         state.skills = msg.skills || [];
@@ -711,6 +714,10 @@
       case "selectionChanged":
         state.selection = msg.selection || null;
         state.effort = msg.effort || "";
+        renderUsageBar();
+        break;
+      case "modeChanged":
+        state.mode = msg.mode !== undefined ? msg.mode : null;
         renderUsageBar();
         break;
       case "appendMessage":

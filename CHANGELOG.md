@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1 (2026-08-15)
+
+### Fixed — DSH agent-preset lifecycle semantics
+
+- **Mode is fixed at session creation and cannot change once the session has started** (matches DSH `agent-preset-locked`): `/mode` is only accepted while the session is blank; after the first user task it explains the rule and suggests `/clear`.
+- **The session records its own mode**: `ChatSession.mode` persists with the session; new sessions inherit the workspace's current mode selection; loaded sessions keep their own mode. `/compact` preserves the mode, and `replaceSessionWithSummary` no longer drops it.
+- **Preset composition is snapshotted per session**: DSH reads a preset composition once at session creation and never re-reads it; because headless spawns a fresh process per task, the extension now snapshots the first task's `agent.cordis.yml` into globalStorage and reuses that exact file for all later turns of the session (resilient to dsh upgrades/deletes mid-session).
+- **Broken/missing preset fails the task instead of silently downgrading**: matching DSH, a session cannot start under an unavailable preset; the message tells the user to `/clear` and pick another mode. `/compact` and `@dsh-agent` fail closed the same way.
+- Sidebar labels the selection as “Agent mode (new session)”; webview mode badge uses the session's locked mode.
+
 ## 1.0.0 (2026-08-15)
 
 ### Added — DSH built-in Agent modes

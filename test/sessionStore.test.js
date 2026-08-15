@@ -92,6 +92,25 @@ test("会话文件里的坏消息被丢弃，好会话仍可载入", () => {
   assert.equal(loaded.messages[0].content, "hi");
 });
 
+test("会话的 Agent 模式随文件持久化，非法 mode 被清洗", () => {
+  const root = tmpRoot();
+  const store = new SessionStore(root, "C:\\proj");
+  const dir = path.join(root, "sessions", stableHash("C:\\proj"));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "modes.json"),
+    JSON.stringify({ id: "modes", title: "modes", createdAt: 1, updatedAt: 1, mode: "code", messages: [] }),
+    "utf8"
+  );
+  assert.equal(store.load("modes").mode, "code", "合法 mode 应保留");
+  fs.writeFileSync(
+    path.join(dir, "bad-mode.json"),
+    JSON.stringify({ id: "bad-mode", title: "bad", createdAt: 1, updatedAt: 1, mode: "nope", messages: [] }),
+    "utf8"
+  );
+  assert.equal(store.load("bad-mode").mode, undefined, "非法 mode 应清空");
+});
+
 test("损坏的会话文件返回 undefined 而非抛错", () => {
   const root = tmpRoot();
   const store = new SessionStore(root, "C:\\proj");
