@@ -17,6 +17,28 @@ export function registerChatParticipant(
   envProvider: () => Promise<NodeJS.ProcessEnv>,
   log?: (line: string) => void
 ): vscode.Disposable {
+  // 老版本 VS Code 可能没有 chat API / 未声明 participant 会抛错：
+  // 注册失败只影响 @dsh-agent，绝不能中断整个扩展激活（其余命令/侧边栏照常可用）。
+  if (!vscode.chat?.createChatParticipant) {
+    log?.(t("当前 VS Code 版本不支持 Chat Participant，已跳过 @dsh-agent 注册。", "Chat Participant is not supported by this VS Code version; skipped @dsh-agent registration."));
+    return new vscode.Disposable(() => {});
+  }
+  try {
+    return registerParticipant(context, cliProvider, envProvider, log);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log?.(tf(t("@dsh-agent 注册失败（其余功能不受影响）：{0}", "@dsh-agent registration failed (other features remain available): {0}"), message));
+    return new vscode.Disposable(() => {});
+  }
+}
+
+/** 实际注册 @dsh-agent 的实现（已声明在 package.json contributes.chatParticipants）。 */
+function registerParticipant(
+  context: vscode.ExtensionContext,
+  cliProvider: () => Promise<ResolvedCli>,
+  envProvider: () => Promise<NodeJS.ProcessEnv>,
+  log?: (line: string) => void
+): vscode.Disposable {
   const participant = vscode.chat.createChatParticipant("dsh-agent", async (request, _chatCtx, stream, token) => {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) {

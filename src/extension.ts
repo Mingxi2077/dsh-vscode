@@ -422,6 +422,18 @@ export function activate(context: vscode.ExtensionContext): void {
           const newLog = after.find((f) => f.endsWith("session.jsonl") && !before.has(f));
 
           output.appendLine(t("任务执行: {0}", "task run: {0}").replace("{0}", result.code === 0 ? "✓ exit 0" : `✗ exit ${result.code}`));
+          // 常见故障定向提示：profile 引用了已删除/不可用的 bundle（例如本地 link 插件目录被删）
+          const brokenBundle = result.stderr.match(/cannot resolve profile bundle "([^"]+)"/)?.[1];
+          if (brokenBundle) {
+            output.appendLine("");
+            output.appendLine(t("⚠️ 检测到 headless profile 引用了缺失的插件包：{0}", "⚠️ The headless profile references a missing plugin package: {0}").replace("{0}", brokenBundle));
+            output.appendLine(
+              t(
+                "   这通常因为该插件已被删除或本地路径已失效。请在「DSH: 插件中心」卸载它，或运行 dsh plugin --profile headless rm {0}。",
+                "   This usually means the plugin was removed or its local path no longer exists. Uninstall it in \"DSH: Plugin Center\", or run dsh plugin --profile headless rm {0}."
+              ).replace("{0}", brokenBundle)
+            );
+          }
           if (result.stderr.trim()) output.appendLine(`  stderr: ${result.stderr.trim().slice(0, 300)}`);
           output.appendLine(t("流式补丁（明文会话日志）: {0}", "streaming patch (plain session log): {0}").replace("{0}", newLog ? t("✓ 已生成", "✓ generated") : t("✗ 未生成（流式将不可用）", "✗ not generated (streaming unavailable)")));
           if (newLog) output.appendLine(t("  日志: {0}", "  log: {0}").replace("{0}", newLog));

@@ -18,6 +18,8 @@
   "command.openTerminal": "DSH: 打开 dsh 终端",
   "command.editMemory": "DSH: 编辑项目记忆",
   "command.showMemory": "DSH: 查看项目记忆",
+  "chat.dshAgent.fullName": "DSH Agent",
+  "chat.dshAgent.description": "在 VS Code Chat 中运行 DSH（DeepSeek Harness）Agent 任务。",
   "config.cliPath": "dsh 可执行文件或 @deepseek-ai/dsh 的 lib/bin.js 的绝对路径。留空 = 自动从 PATH 解析。",
   "config.extraArgs": "追加到 dsh 启动命令的额外参数（在 --profile headless 之后，例如 --patch <path>）。",
   "config.timeoutSeconds": "单次任务的超时秒数，超时自动取消。",

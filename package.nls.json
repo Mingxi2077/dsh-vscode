@@ -18,6 +18,8 @@
   "command.openTerminal": "DSH: Open dsh Terminal",
   "command.editMemory": "DSH: Edit Project Memory",
   "command.showMemory": "DSH: View Project Memory",
+  "chat.dshAgent.fullName": "DSH Agent",
+  "chat.dshAgent.description": "Run DSH (DeepSeek Harness) agent tasks inside VS Code Chat.",
   "config.cliPath": "Absolute path to the dsh executable or @deepseek-ai/dsh's lib/bin.js. Empty = resolve from PATH automatically.",
   "config.extraArgs": "Extra args appended to the dsh launch command (after --profile headless, e.g. --patch <path>).",
   "config.timeoutSeconds": "Timeout in seconds for a single task; auto-cancelled when exceeded.",

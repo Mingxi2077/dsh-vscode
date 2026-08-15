@@ -2,7 +2,7 @@
   "name": "dsh-harness-vscode",
   "displayName": "DSH Agent for VS Code",
   "description": "%description%",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "publisher": "mingxi2077",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -173,6 +173,15 @@
         }
       ]
     },
+    "chatParticipants": [
+      {
+        "id": "dsh-agent",
+        "name": "dsh-agent",
+        "fullName": "%chat.dshAgent.fullName%",
+        "description": "%chat.dshAgent.description%",
+        "isSticky": true
+      }
+    ],
     "configuration": {
       "title": "DSH",
       "properties": {

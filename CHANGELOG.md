@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.10 (2026-08-15)
+
+### Fixed
+
+- **Chat participant activation error**: `vscode.chat.createChatParticipant("dsh-agent")` now has the matching `contributes.chatParticipants` declaration in `package.json` (fixes `chatParticipant must be declared in package.json: dsh-agent` logged by the extension host). Registration is also guarded so older VS Code versions skip `@dsh-agent` without breaking the rest of the extension.
+- **Self-test guidance for broken profile bundles**: when a task fails with `cannot resolve profile bundle "..."` (e.g. a local link plugin whose directory was deleted), the self-test output now names the package and tells the user to uninstall it from the Plugin Center or via `dsh plugin --profile headless rm <pkg>`.
+- **Edit memory error handling**: failures while creating/opening `.dsh/memory.md` now show a friendly message instead of surfacing as an unhandled command error dialog.
+
 ## 0.9.9 (2026-08-15)
 
 ### Fixed（整体韧性加固）

@@ -824,23 +824,28 @@ export class ChatPanel {
     postMemory(this);
   }
 
-  /** 在编辑器中打开项目记忆文件（不存在则创建）。 */
+  /** 在编辑器中打开项目记忆文件（不存在则创建；失败给友好提示，不弹原始错误对话框）。 */
   async editMemory(): Promise<void> {
     const file = path.join(this.folder.uri.fsPath, ".dsh", "memory.md");
-    if (!this.memory.exists()) {
-      const fs = await import("fs");
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(
-        file,
-        t(
-          "# 项目长期记忆\n\n在这里记录项目的关键约定、架构决策、常用命令等，DSH 每次任务会自动参考。\n",
-          "# Project long-term memory\n\nRecord key conventions, architecture decisions, common commands, etc. DSH references this on every task.\n"
-        ),
-        "utf8"
-      );
+    try {
+      if (!this.memory.exists()) {
+        const fs = await import("fs");
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(
+          file,
+          t(
+            "# 项目长期记忆\n\n在这里记录项目的关键约定、架构决策、常用命令等，DSH 每次任务会自动参考。\n",
+            "# Project long-term memory\n\nRecord key conventions, architecture decisions, common commands, etc. DSH references this on every task.\n"
+          ),
+          "utf8"
+        );
+      }
+      await vscode.window.showTextDocument(vscode.Uri.file(file));
+      this.reveal();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      void vscode.window.showErrorMessage(tf(t("无法打开项目记忆文件：{0}", "Cannot open the project memory file: {0}"), message));
     }
-    void (await vscode.window.showTextDocument(vscode.Uri.file(file)));
-    this.reveal();
   }
 
   addContextBlock(block: Omit<ContextBlock, "id">): void {
