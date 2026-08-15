@@ -5,6 +5,7 @@ import { SessionTracer } from "./sessionTracer";
 import { writeModelPatch, loadSelection } from "./modelSelection";
 import { stableHash } from "./sessionStore";
 import { ProjectMemory } from "./memory";
+import { PluginWatch } from "./pluginWatch";
 import { isZh, t, tf } from "./i18n";
 
 /**
@@ -102,6 +103,9 @@ function registerParticipant(
         env,
         signal: abort.signal,
       });
+
+      // @dsh-agent 任务里 agent 也可能直接安装插件：与聊天面板任务一样补一次哨兵检测
+      void new PluginWatch(context).checkOnce(cli).catch(() => {});
 
       if (token.isCancellationRequested) {
         stream.markdown(t("已取消。", "Cancelled."));

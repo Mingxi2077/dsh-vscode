@@ -53,14 +53,24 @@ export function profilePatchPath(): string {
   return dshHomePath("profiles", "headless", "cordis.patch.yml");
 }
 
+/** 顶层是否为非空 flow 集合（如 [{...}]）。块式条目内的嵌套 flow config 不算。 */
+function isTopLevelFlowPatch(raw: string): boolean {
+  const first = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith("#"));
+  if (!first) return false;
+  return first.startsWith("[") && first !== "[]";
+}
+
 /** 读取 patch 原文（不存在返回默认模板；已存在但无数组内容时补 []，保证 DSH 可解析）。 */
 export function readPatch(file = profilePatchPath()): string {
   try {
     const raw = fs.readFileSync(file, "utf8");
     if (raw.trim()) {
-      // DSH 要求顶层是 YAML 数组：若内容里没有任何条目，补上空数组模板
+      // DSH 要求顶层是 YAML 数组：没有任何条目时补空数组模板
       const hasEntries =
-        raw.split(/\r?\n/).some((l) => /^\s*-\s*id:/.test(l)) || /\[[^\]]*-\s*id:/.test(raw) || /\[\s*[^\]]*["']?id["']?\s*:/.test(raw);
+        raw.split(/\r?\n/).some((l) => /^\s*-\s*id:/.test(l)) || isTopLevelFlowPatch(raw);
       if (!hasEntries && !/\[\s*\]/.test(raw)) {
         return raw.trimEnd() + "\n[]\n";
       }
@@ -169,8 +179,8 @@ export function enablePreset(
     return { ok: true, message: "already-enabled", presetName: preset.name, enPresetName: preset.enName };
   }
   const raw = readPatch(file);
-  // flow 集合（[{- id:...} 或 [{"id":...}]）已含条目时无法安全地混入块式条目，拒绝而不是写坏文件
-  if (/\[[^\]]*-\s*id:/.test(raw) || /\[\s*[^\]]*["']?id["']?\s*:/.test(raw)) {
+  // 顶层 flow 集合已含条目时无法安全地混入块式条目，拒绝而不是写坏文件
+  if (isTopLevelFlowPatch(raw)) {
     return {
       ok: false,
       message:
@@ -267,7 +277,7 @@ function removePresetFromPatch(raw: string, id: PresetId): string {
   // DSH 要求 patch 顶层必须是 YAML 数组。若移除后已无任何 `- id:` 条目，
   // 统一归一化为空数组模板（注释 + `[]`），绝不能留下纯注释（会导致 DSH 解析失败）。
   // 注意：条目可能是块式（行首 `- id:`）或 flow 集合内（`[...]`），两种都要识别。
-  const hasEntries = joined.split("\n").some((l) => /^\s*-\s*id:/.test(l)) || /\[[^\]]*-\s*id:/.test(joined);
+  const hasEntries = joined.split("\n").some((l) => /^\s*-\s*id:/.test(l)) || isTopLevelFlowPatch(joined);
   if (!hasEntries) {
     return "# dsh-vscode 生成的 headless 预设层（由「DSH: 模式预设」管理）\n# 按 id 覆盖 bundle 层配置，last write wins。\n[]\n";
   }

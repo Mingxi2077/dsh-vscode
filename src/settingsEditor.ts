@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { dshHomePath } from "./dshHome";
+import { t, tf } from "./i18n";
 
 /**
  * 用户 ~/.dsh/settings.yaml 中 llm-pi-ai.providers 段的编辑器。
@@ -197,7 +198,7 @@ export function writeProviderToSettings(
 ): { ok: boolean; message: string; changed: boolean } {
   const raw = readSettingsFile(file);
   if (hasProvider(raw, profile.id)) {
-    return { ok: true, message: `提供商 ${profile.id} 已在配置中`, changed: false };
+    return { ok: true, message: tf(t("提供商 {0} 已在配置中", "Provider {0} is already configured"), profile.id), changed: false };
   }
   const next = upsertProvider(raw, profile);
   const backup = `${file}.bak-${Date.now()}`;
@@ -209,7 +210,11 @@ export function writeProviderToSettings(
     fs.writeFileSync(tmp, next, "utf8");
     fs.renameSync(tmp, file);
     cleanupBackups(file);
-    return { ok: true, message: `已写入 ~/.dsh/settings.yaml（备份 ${path.basename(backup)}）`, changed: true };
+    return {
+      ok: true,
+      message: tf(t("已写入 {0}（备份 {1}）", "Written to {0} (backup {1})"), file, path.basename(backup)),
+      changed: true,
+    };
   } catch (err) {
     try {
       fs.rmSync(tmp, { force: true });
@@ -217,6 +222,10 @@ export function writeProviderToSettings(
     } catch {
       // 回滚失败也保留原始错误
     }
-    return { ok: false, message: `写入 settings.yaml 失败：${err instanceof Error ? err.message : String(err)}`, changed: false };
+    return {
+      ok: false,
+      message: tf(t("写入 settings.yaml 失败：{0}", "Failed to write settings.yaml: {0}"), err instanceof Error ? err.message : String(err)),
+      changed: false,
+    };
   }
 }

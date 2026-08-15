@@ -1,13 +1,24 @@
 const test = require("node:test");
+const { after } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { SessionStore, stableHash } = require("../out/sessionStore.js");
 
+const createdRoots = [];
+
 function tmpRoot() {
-  // 临时目录放在工作区内，适配受限沙箱环境
-  return fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-"));
+  // 临时目录放在工作区内，适配受限沙箱环境；由 after 统一清理
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-"));
+  createdRoots.push(root);
+  return root;
 }
+
+after(() => {
+  for (const root of createdRoots) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("stableHash 稳定且区分输入", () => {
   assert.equal(stableHash("abc"), stableHash("abc"));

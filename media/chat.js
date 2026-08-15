@@ -645,12 +645,14 @@
       const msg = state.messages.find((m) => m.id === id);
       if (!msg) return;
       if (btn.dataset.act === "copy") {
-        navigator.clipboard.writeText(msg.content).then(() => {
-          btn.textContent = t("copied");
-          setTimeout(() => (btn.textContent = t("copy")), 1200);
-        }).catch(() => {
-          // 剪贴板不可用时静默降级，避免 webview 出现未处理 Promise 拒绝
-        });
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(msg.content).then(() => {
+            btn.textContent = t("copied");
+            setTimeout(() => (btn.textContent = t("copy")), 1200);
+          }).catch(() => {
+            // 剪贴板不可用时静默降级，避免 webview 出现未处理 Promise 拒绝
+          });
+        }
       } else if (btn.dataset.act === "insert") {
         post({ type: "insertCode", id });
       } else if (btn.dataset.act === "apply") {
@@ -696,7 +698,7 @@
         applyProgress(msg.msg);
         break;
       case "usage":
-        state.usage = msg;
+        state.usage = msg.usage || null;
         renderUsageBar();
         break;
       case "selectionChanged":

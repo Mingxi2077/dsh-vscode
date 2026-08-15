@@ -3,9 +3,10 @@ import * as path from "path";
 import * as fs from "fs";
 import { execFile } from "child_process";
 import { ChatPanel, StatusBar } from "./chatPanel";
+import { ProjectMemory } from "./memory";
 import { resolveCli, ResolvedCli, runCliVersion, buildSpawnArgs, runDsh } from "./cli";
 import { SecretStore } from "./secrets";
-import { writeModelPatch, readCustomProviders, catalogProviderById } from "./modelSelection";
+import { writeModelPatch, loadSelection, readCustomProviders, catalogProviderById, providerUiName } from "./modelSelection";
 import { settingsPath } from "./settingsEditor";
 import { stableHash } from "./sessionStore";
 import { registerChatParticipant } from "./chatParticipant";
@@ -23,8 +24,9 @@ function checkProviderConfig(): string[] {
   const lines = providers.map((p) => {
     const cat = catalogProviderById(p.id);
     const kind = cat ? t("DSH 内置（catalog）", "DSH built-in (catalog)") : t("自定义", "custom");
+    const name = cat ? providerUiName(cat) : p.displayName || p.id;
     const hasKey = p.apiKeyEnv ? `${p.apiKeyEnv}${t("（运行时注入）", " (injected at runtime)")}` : t("未声明 apiKeyEnv", "no apiKeyEnv");
-    return `${p.displayName || p.id} (${p.id}) · ${kind} · Key: ${hasKey}`;
+    return `${name} (${p.id}) · ${kind} · Key: ${hasKey}`;
   });
   lines.push(tf(t("共 {0} 个提供商。模型由 DSH 目录提供，升级后自动跟随。", "{0} providers total. Models come from the DSH catalog and auto-follow upgrades."), providers.length));
   return lines;
@@ -49,10 +51,10 @@ function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEn
     for (const [name, value] of Object.entries(stored)) {
       if (!env[name]) env[name] = value;
     }
-    // 相对 DSH_HOME 按工作区根解析，保证子进程与扩展侧（settings/profile 写入）看到同一个目录
+    // 相对 DSH_HOME 按工作区根解析（无工作区时按扩展宿主 cwd），保证子进程与扩展侧路径一致
     if (extraEnv.DSH_HOME && !path.isAbsolute(extraEnv.DSH_HOME)) {
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      if (root) extraEnv.DSH_HOME = path.resolve(root, extraEnv.DSH_HOME);
+      const base = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+      extraEnv.DSH_HOME = path.resolve(base, extraEnv.DSH_HOME);
     }
     // 用户显式配置的 environment 优先级最高
     const final: NodeJS.ProcessEnv = { ...env, ...extraEnv };
@@ -208,6 +210,44 @@ function gitDiffSummary(cwd: string): Promise<string> {
   });
 }
 
+/** 直接打开（或创建）项目记忆文件，不强制拉起聊天面板。
+ * create=false 且文件不存在时只给提示；create=true 时不存在则创建。 */
+async function openProjectMemory(folder: vscode.WorkspaceFolder, create: boolean): Promise<void> {
+  const memory = new ProjectMemory(folder.uri.fsPath);
+  const file = path.join(folder.uri.fsPath, ".dsh", "memory.md");
+  if (!memory.exists()) {
+    if (!create) {
+      void vscode.window.showInformationMessage(
+        t("当前项目还没有长期记忆。可用「DSH: 编辑项目记忆」添加，或在对话中使用 /remember。", "This project has no long-term memory yet. Use \"DSH: Edit Project Memory\", or /remember in chat.")
+      );
+      return;
+    }
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(
+        tmp,
+        t(
+          "# 项目长期记忆\n\n在这里记录项目的关键约定、架构决策、常用命令等，DSH 每次任务会自动参考。\n",
+          "# Project long-term memory\n\nRecord key conventions, architecture decisions, common commands, etc. DSH references this on every task.\n"
+        ),
+        "utf8"
+      );
+      fs.renameSync(tmp, file);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      void vscode.window.showErrorMessage(tf(t("无法创建项目记忆文件：{0}", "Cannot create the project memory file: {0}"), message));
+      return;
+    }
+  }
+  try {
+    await vscode.window.showTextDocument(vscode.Uri.file(file), { preview: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    void vscode.window.showErrorMessage(tf(t("无法打开项目记忆文件：{0}", "Cannot open the project memory file: {0}"), message));
+  }
+}
+
 /** 打开（或复用）聊天面板并预填输入框。 */
 async function openChatWithDraft(
   context: vscode.ExtensionContext,
@@ -223,6 +263,18 @@ async function openChatWithDraft(
   const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
   chat.setDraft(draft);
   return chat;
+}
+
+/** 从设置读取 DSH_HOME 并同步给 dshHome 模块（相对路径按工作区根解析）。 */
+function syncDshHomeFromConfig(): void {
+  const raw = vscode.workspace.getConfiguration("dsh-harness-vscode").get<Record<string, string>>("environment", {});
+  const home = raw?.DSH_HOME;
+  if (home && !path.isAbsolute(home)) {
+    const base = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+    setDshHome(path.resolve(base, home));
+  } else {
+    setDshHome(home);
+  }
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -241,15 +293,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const cliProvider = createCliProvider();
   const envProvider = createEnvProvider(secrets);
   // 启动时同步一次 DSH_HOME；envProvider 每次构建子进程环境时也会再同步
-  setDshHome(
-    vscode.workspace.getConfiguration("dsh-harness-vscode").get<Record<string, string>>("environment", {})?.DSH_HOME
-  );
+  syncDshHomeFromConfig();
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("dsh-harness-vscode.environment")) {
-        setDshHome(
-          vscode.workspace.getConfiguration("dsh-harness-vscode").get<Record<string, string>>("environment", {})?.DSH_HOME
-        );
+        syncDshHomeFromConfig();
       }
     })
   );
@@ -324,16 +372,27 @@ export function activate(context: vscode.ExtensionContext): void {
           validateInput: (v) => (v && v.trim().length > 0 ? undefined : t("API Key 不能为空", "API key cannot be empty")),
         });
         if (key) {
-          await secrets.set("DEEPSEEK_API_KEY", key.trim());
-          status.setReady(true, "DSH API Key " + t("已配置", "set"));
-          void vscode.window.showInformationMessage(
-            t("API Key 已保存到系统密钥链。现在可以「DSH: 打开对话」开始使用了。", "API key saved to the system keychain. You can now run \"DSH: Open Chat\" to start.")
-          );
+          try {
+            await secrets.set("DEEPSEEK_API_KEY", key.trim());
+            status.setReady(true, "DSH API Key " + t("已配置", "set"));
+            void vscode.window.showInformationMessage(
+              t("API Key 已保存到系统密钥链。现在可以「DSH: 打开对话」开始使用了。", "API key saved to the system keychain. You can now run \"DSH: Open Chat\" to start.")
+            );
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            void vscode.window.showErrorMessage(tf(t("保存 API Key 失败：{0}", "Failed to save the API key: {0}"), message));
+          }
         }
       } else {
-        await secrets.delete("DEEPSEEK_API_KEY");
-        status.setReady(hasSecret, hasSecret ? "DSH: API Key " + t("已清除", "cleared") : "DSH: API Key " + t("尚未配置", "not set"));
-        void vscode.window.showInformationMessage(t("已清除 API Key。", "API key cleared."));
+        try {
+          await secrets.delete("DEEPSEEK_API_KEY");
+          // 未配置时“清除”不应把状态栏标红（ready 是环境健康状态，不是“是否刚清除了密钥”）
+          status.setReady(true, "DSH: API Key " + (hasSecret ? t("已清除", "cleared") : t("尚未配置", "not set")));
+          void vscode.window.showInformationMessage(t("已清除 API Key。", "API key cleared."));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          void vscode.window.showErrorMessage(tf(t("清除 API Key 失败：{0}", "Failed to clear the API key: {0}"), message));
+        }
       }
     }),
 
@@ -391,6 +450,12 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showInformationMessage(t("自检已在运行中，请稍候。", "A self-test is already running; please wait."));
         return;
       }
+      if (ChatPanel.current()?.isActive()) {
+        void vscode.window.showInformationMessage(
+          t("聊天面板有任务正在运行，请先等待完成或取消，再执行兼容性自检。", "A chat task is still running. Wait for it or cancel it before running the compatibility self-test.")
+        );
+        return;
+      }
       selfTestRunning = true;
       try {
         const folder = await pickFolder();
@@ -407,8 +472,10 @@ export function activate(context: vscode.ExtensionContext): void {
           const before = new Set(walkFiles(sessionsDir).filter((f) => f.endsWith("session.jsonl")));
 
           const extraArgs = ["--patch", streamPatch];
-          const sel = ChatPanel.current()?.selection;
-          const modelPatch = sel ? writeModelPatch(context.globalStorageUri.fsPath, stableHash(folder.uri.fsPath), sel) : undefined;
+          // 自检选择必须按“本次检测的目录”读取，而不是当前面板目录的模型选择（多工作区时二者可能不同）
+          const folderHash = stableHash(folder.uri.fsPath);
+          const sel = loadSelection(context.globalStorageUri.fsPath, folderHash);
+          const modelPatch = sel ? writeModelPatch(context.globalStorageUri.fsPath, folderHash, sel) : undefined;
           if (modelPatch) extraArgs.push("--patch", modelPatch);
 
           const args = buildSpawnArgs(cli, extraArgs, t("请只回复两个字：好的", "Please reply with just: OK"));
@@ -563,27 +630,15 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.editMemory", async () => {
-      const current = ChatPanel.current();
-      if (current) {
-        await current.editMemory();
-        return;
-      }
       const folder = await pickFolder();
       if (!folder) return;
-      const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-      await chat.editMemory();
+      await openProjectMemory(folder, true);
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.showMemory", async () => {
-      const current = ChatPanel.current();
-      if (current) {
-        current.showMemory();
-        return;
-      }
       const folder = await pickFolder();
       if (!folder) return;
-      const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-      chat.showMemory();
+      await openProjectMemory(folder, false);
     })
   );
 

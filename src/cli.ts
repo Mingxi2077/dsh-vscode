@@ -117,7 +117,7 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
   if (cliPath && cliPath.trim().length > 0) {
     const p = path.resolve(cliPath.trim());
     if (!fs.existsSync(p)) {
-      throw new Error(`配置的 dsh-harness-vscode.cliPath 不存在: ${p}`);
+      throw new Error(tf(t("配置的 dsh-harness-vscode.cliPath 不存在：{0}", "Configured dsh-harness-vscode.cliPath does not exist: {0}"), p));
     }
     if (p.toLowerCase().endsWith(".js")) {
       return { kind: "entry", node: await resolveNodeBinary(), entry: p, source: "配置(dsh-harness-vscode.cliPath)" };
@@ -210,6 +210,8 @@ export function runCliVersion(cli: ResolvedCli): Promise<string> {
     let stderr = "";
     let settled = false;
     const timer = setTimeout(() => {
+      settled = true;
+      clearTimeout(timer);
       child.kill();
       reject(new Error(t("查询 dsh 版本超时", "Timed out querying the dsh version")));
     }, 15000);

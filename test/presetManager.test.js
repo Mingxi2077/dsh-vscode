@@ -46,6 +46,19 @@ test("readPatch：文件不存在时返回默认模板", () => {
   }
 });
 
+test("enablePreset：块式条目内的嵌套 flow config 不误判为顶层 flow", () => {
+  const { root, file } = tmpPatch("- id: some-plugin\n  config:\n    opts: {id: nested}\n");
+  try {
+    const res = enablePreset("auto-compact", file);
+    assert.equal(res.ok, true, "块式 patch 的嵌套 flow 配置不应触发 flow 拒绝");
+    const raw = fs.readFileSync(file, "utf8");
+    assert.ok(raw.includes("- id: some-plugin"), "原有条目保留");
+    assert.ok(raw.includes("dsh-vscode-preset: auto-compact"), "预设追加成功");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("enablePreset：flow 风格已含条目时拒绝写入（防止把文件改成非法 YAML）", () => {
   const { root, file } = tmpPatch('[{"id": "some-plugin", "config": {}}]\n');
   try {

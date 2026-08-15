@@ -10,6 +10,7 @@ import {
   apiKeyEnvFor,
   catalogProviderById,
   listModels,
+  providerUiName,
   readCustomProviders,
 } from "./modelSelection";
 import {
@@ -17,6 +18,7 @@ import {
   catalogProfile,
   hasProvider,
   readSettingsFile,
+  settingsPath,
   writeProviderToSettings,
 } from "./settingsEditor";
 import { listSkills } from "./skills";
@@ -168,7 +170,7 @@ async function pickProvider(host: ChatCommandHost): Promise<void> {
       ...CATALOG_PICKS(raw, configuredIds),
       // --- 已配置 ---
       { label: t("🛠 已配置的提供商", "🛠 Configured providers"), kind: vscode.QuickPickItemKind.Separator },
-      { label: DEEPSEEK_PROVIDER.displayName, description: DEEPSEEK_PROVIDER.id, detail: t("DSH 出厂自带，无需配置", "Built into DSH, nothing to configure"), providerId: DEEPSEEK_PROVIDER.id },
+      { label: providerUiName(DEEPSEEK_PROVIDER), description: DEEPSEEK_PROVIDER.id, detail: t("DSH 出厂自带，无需配置", "Built into DSH, nothing to configure"), providerId: DEEPSEEK_PROVIDER.id },
       ...custom.map((p) => ({
         label: p.displayName || p.id,
         description: p.id,
@@ -204,10 +206,11 @@ async function pickProvider(host: ChatCommandHost): Promise<void> {
 function CATALOG_PICKS(raw: string, configuredIds: Set<string>) {
   return CATALOG_PROVIDERS.map((p) => {
     const configured = configuredIds.has(p.id) || hasProvider(raw, p.id);
+    const name = providerUiName(p);
     return {
-      label: configured ? p.displayName : `${p.displayName}（${t("一键接入", "one-click")}）`,
+      label: configured ? name : `${name}（${t("一键接入", "one-click")}）`,
       description: p.id,
-      detail: `${p.apiKeyEnv ?? t("无需 Key", "no key needed")}${configured ? " · " + t("已配置", "configured") : ""}${p.note ? ` · ${p.note}` : ""}`,
+      detail: `${p.apiKeyEnv ?? t("无需 Key", "no key needed")}${configured ? " · " + t("已配置", "configured") : ""}${p.note ? ` · ${t(p.note, p.noteEn ?? p.note)}` : ""}`,
       providerId: p.id,
     };
   });
@@ -216,13 +219,19 @@ function CATALOG_PICKS(raw: string, configuredIds: Set<string>) {
 /** 选择一个 provider：确保已写入 settings.yaml + 输入 API Key + 切换模型选择。 */
 async function selectProvider(host: ChatCommandHost, provider: ProviderInfo): Promise<void> {
   const isCatalog = !!catalogProviderById(provider.id);
+  const displayName = providerUiName(provider);
   const raw = readSettingsFile();
   const needWrite = !hasProvider(raw, provider.id);
   if (needWrite && isCatalog && provider.apiKeyEnv) {
     const go = await vscode.window.showInformationMessage(
-      t(
-        `将把 ${provider.displayName}（${provider.id}）写入 ~/.dsh/settings.yaml 的 llm-pi-ai.providers（只需 apiKeyEnv，模型由 DSH 目录提供）。继续？`,
-        `Write ${provider.displayName} (${provider.id}) into llm-pi-ai.providers in ~/.dsh/settings.yaml (apiKeyEnv only; models come from the DSH catalog). Continue?`
+      tf(
+        t(
+          "将把 {1}（{2}）写入 {0} 的 llm-pi-ai.providers（只需 apiKeyEnv，模型由 DSH 目录提供）。继续？",
+          "Write {1} ({2}) into llm-pi-ai.providers in {0} (apiKeyEnv only; models come from the DSH catalog). Continue?"
+        ),
+        settingsPath(),
+        displayName,
+        provider.id
       ),
       { modal: true },
       t("继续", "Continue")
@@ -244,7 +253,7 @@ async function selectProvider(host: ChatCommandHost, provider: ProviderInfo): Pr
         { label: t("设置 API Key", "Set API Key"), description: existing ? t("当前已配置（保存在系统密钥链）", "already set (system keychain)") : t("尚未配置", "not set") },
         { label: t("跳过（使用环境变量 / DSH 凭证）", "Skip (use env var / DSH credentials)"), description: "" },
       ],
-      { placeHolder: `${provider.displayName} ` + t("需要 API Key（{0}）", "needs an API Key ({0})").replace("{0}", envName) }
+      { placeHolder: `${displayName} ` + t("需要 API Key（{0}）", "needs an API Key ({0})").replace("{0}", envName) }
     );
     if (act?.label.startsWith(t("设置", "Set"))) {
       const key = await vscode.window.showInputBox({
@@ -257,16 +266,17 @@ async function selectProvider(host: ChatCommandHost, provider: ProviderInfo): Pr
     }
   }
 
+  // 切换提供商时不要沿用旧提供商的 model id（例如 openai 的 gpt-5.4 对 anthropic 无效）
   const sel: ModelSelection = {
     provider: provider.id,
-    model: host.selection?.model ?? "",
+    model: "",
     reasoningEffort: host.selection?.reasoningEffort,
   };
   await host.setSelection(sel);
   host.post({
     type: "appendMessage",
     message: host.systemMessage(
-      tf(t("提供商已切换：{0}（{1}）。下一步用 /model 选模型。", "Provider switched to {0} ({1}). Next, use /model to pick a model."), provider.displayName, provider.id)
+      tf(t("提供商已切换：{0}（{1}）。下一步用 /model 选模型。", "Provider switched to {0} ({1}). Next, use /model to pick a model."), displayName, provider.id)
     ),
   });
 }
@@ -388,8 +398,10 @@ async function pickModel(host: ChatCommandHost): Promise<void> {
     });
   }
   if (!model) return;
-  await host.setSelection({ ...host.selection, provider: providerId, model });
-  host.post({ type: "appendMessage", message: host.systemMessage(tf(t("模型已切换：{0}", "Model switched: {0}"), model)) });
+  const modelId = model.trim();
+  if (!modelId) return;
+  await host.setSelection({ ...host.selection, provider: providerId, model: modelId });
+  host.post({ type: "appendMessage", message: host.systemMessage(tf(t("模型已切换：{0}", "Model switched: {0}"), modelId)) });
 }
 
 async function pickEffort(host: ChatCommandHost): Promise<void> {

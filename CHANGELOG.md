@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.9.11 (2026-08-15)
+
+### Fixed（user-flow review round）
+
+- **View/Edit Project Memory no longer force-opens the chat panel**: both sidebar commands now open `.dsh/memory.md` directly (View shows a hint when memory is empty; Edit creates it on demand). `/memory` and `/edit-memory` inside chat keep their original behavior.
+- **Reopening a hidden chat panel no longer destroys the current session**: the previous `open` logic disposed a merely hidden panel and created a fresh session; it now reuses the panel and re-syncs state when it becomes visible.
+- **New session / folder switch now reset the VS Code panel tab title and usage bar**; loading a session also clears stale usage.
+- **Status bar race fixed**: an old task finishing after the panel was disposed could clear the running indicator of a newly started task.
+- **`historyMessages` semantics corrected**: the setting now means exactly the latest N messages (previously N×2 were injected).
+- **Switching provider clears the old provider's model id** (`openai/gpt-5.4` no longer carries over to `anthropic`); manually typed model names are trimmed.
+- **Self-test uses the selected folder's stored model selection** instead of whatever folder the open chat panel happens to be on.
+- **`dsh-agent` tasks now trigger the plugin sentinel** like chat panel tasks do.
+- **GitHub install source normalization**: `github:owner/repo` / `owner/repo` is converted to `git+https` regardless of whether the user picked the GitHub or URL entry in the source picker.
+- **Provider names/notes are bilingual** (`DeepSeek Official (built-in)`, GitHub Copilot note); plugin-center installed-item descriptions follow the UI language.
+- **Settings editor messages localized**; preset-center help and provider confirmation show the actual configured paths instead of hard-coded `~/.dsh`.
+- **Keychain failures in "Set API Key" show a friendly message**; clearing a missing key no longer turns the status bar red.
+- **Preset flow-style detection no longer mistakes nested flow config inside block entries for a top-level flow patch.**
+- **`onlyBuiltDependencies: ['a']` flow lists are appended safely and idempotently** instead of creating a duplicate YAML key.
+- **Model selection state validation**: corrupted `model-selection/*.json` with non-string fields is ignored instead of crashing YAML generation; model patch paths are YAML-escaped.
+- **Plugin command spawn/retry failures always resolve to result objects** (no unhandled rejections from sync spawn errors); headless check wraps dump-config failures.
+- **Robustness**: `/compact` model-patch write failure no longer leaves `busy` stuck; panel disposal also aborts a running `/compact`; plugin sentinel releases its lock before showing a notification; session-store tests now clean up after themselves.
+
 ## 0.9.10 (2026-08-15)
 
 ### Fixed

@@ -66,6 +66,8 @@ export class PluginWatch {
       if (!OFFICIAL_BUNDLES.has(p.packageName)) known.add(p.packageName);
     }
     await this.context.globalState.update(PluginWatch.KEY, [...known]);
+    // 检测记录已落盘，立刻释放类级锁：通知挂起期间新安装的插件仍可被下一次 checkOnce 捕获
+    PluginWatch.running = false;
     const lines = results.map((r) => `${compatLevelIcon(r.level as "ok" | "warning" | "inactive" | "fail")} ${r.name}`).join("\n");
     const pick = await vscode.window.showInformationMessage(
       t(

@@ -8,6 +8,7 @@ const {
   apiKeyEnvFor,
   readDefaultEffort,
   writeModelPatch,
+  loadSelection,
   CATALOG_PROVIDERS,
   catalogProviderById,
   isCatalogProvider,
@@ -155,6 +156,52 @@ test("buildTaskText 包含会话配置与技能段", () => {
   assert.ok(text.includes("README.md"));
   assert.ok(text.includes("--- 最新用户消息 ---"));
   assert.ok(text.includes("继续"));
+});
+
+test("buildTaskText：historyMessages 语义是“最近 N 条消息”（不翻倍）", () => {
+  const session = {
+    id: "s1",
+    title: "t",
+    createdAt: 1,
+    updatedAt: 1,
+    messages: [
+      { id: "m1", role: "user", content: "问题1", ts: 1 },
+      { id: "m2", role: "assistant", content: "回答1", ts: 2 },
+      { id: "m3", role: "user", content: "问题2", ts: 3 },
+      { id: "m4", role: "assistant", content: "回答2", ts: 4 },
+      { id: "m5", role: "user", content: "最新问题", ts: 5 },
+    ],
+  };
+  const text = buildTaskText(
+    "C:\\proj",
+    session,
+    [],
+    { excerpt: () => "" },
+    2,
+    8000
+  );
+  assert.ok(text.includes("问题2"), "应包含倒数第 2 条");
+  assert.ok(text.includes("回答2"), "应包含倒数第 1 条历史");
+  assert.ok(!text.includes("问题1"), "不应包含更早的第 3 条历史");
+  assert.ok(!text.includes("回答1"), "不应包含更早的第 4 条历史");
+  assert.ok(text.includes("最新问题"), "最新用户消息仍在任务文本末尾");
+});
+
+test("loadSelection：损坏/类型不对的状态文件按无选择处理", () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-mdl-"));
+  try {
+    const dir = path.join(root, "model-selection");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "h.json");
+    fs.writeFileSync(file, JSON.stringify({ provider: 123, model: "x" }), "utf8");
+    assert.equal(loadSelection(root, "h"), undefined, "provider 非字符串应忽略");
+    fs.writeFileSync(file, JSON.stringify({ provider: "p", model: "m", reasoningEffort: 42 }), "utf8");
+    const sel = loadSelection(root, "h");
+    assert.equal(sel.reasoningEffort, undefined, "reasoningEffort 非字符串应清空");
+    assert.equal(sel.model, "m");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("buildTaskText：zh=false 时输出英文任务模板（i18n 防回归）", () => {

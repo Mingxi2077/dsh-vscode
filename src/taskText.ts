@@ -65,8 +65,9 @@ export function buildTaskText(
     }
   }
 
-  // historyMessages=0 表示禁用历史注入；slice(-0) 会返回整个数组，需显式处理
-  const hist = historyMessages > 0 ? session.messages.slice(0, -1).slice(-historyMessages * 2) : [];
+  // historyMessages=0 表示禁用历史注入；slice(-0) 会返回整个数组，需显式处理。
+  // 配置语义是“最近 N 条消息”，因此只取 N 条（而非 N*2）。
+  const hist = historyMessages > 0 ? session.messages.slice(0, -1).slice(-historyMessages) : [];
   if (hist.length > 0) {
     lines.push(zh ? "--- 历史对话 ---" : "--- Conversation history ---");
     for (const m of hist) {

@@ -98,7 +98,7 @@ function makeInstalledItem(p: InstalledPlugin): PluginPickItem {
   return {
     label: `${p.active ? "🟢" : "⚪"} ${feat?.displayName ?? p.packageName}`,
     description: p.active ? t("已激活", "active") : t("未激活（非 bundle）", "inactive (non-bundle)"),
-    detail: `${p.packageName}${p.version ? ` · v${p.version}` : ""}${feat ? ` — ${feat.description}` : ""}`,
+    detail: `${p.packageName}${p.version ? ` · v${p.version}` : ""}${feat ? ` — ${t(feat.description, feat.descriptionEn ?? feat.description)}` : ""}`,
     packageName: p.packageName,
   };
 }
@@ -167,7 +167,13 @@ async function runCompatibilityCheck(cli: ResolvedCli, packageName: string): Pro
     () => checkPluginHeadless(cli, packageName)
   );
   // 手动检测成功后同样写入哨兵记录，避免下次打开插件中心重复通知
-  if (watchContext && check.ran) await new PluginWatch(watchContext).markChecked([packageName]);
+  if (watchContext && check.ran) {
+    try {
+      await new PluginWatch(watchContext).markChecked([packageName]);
+    } catch {
+      // globalState 写入失败不阻塞检测结果展示
+    }
+  }
   const label = compatCheckLabel(check);
   const body =
     check.level === "ok"
@@ -212,9 +218,11 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
 
   const source = input.trim();
   // github 短名（github:owner/repo 或 owner/repo）统一转成显式 git+https URL：
-  // pnpm 对 github: 协议可能解析成 git+ssh://，本机无 ssh key 时 clone 失败（exit 128）
+  // pnpm 对 github: 协议可能解析成 git+ssh://，本机无 ssh key 时 clone 失败（exit 128）。
+  // 不管用户选择的是 GitHub 还是 URL 入口，只要输入识别为 github 短名就转换。
+  const detectedRaw = installSourceKind(source);
   const resolvedSource =
-    kind === "github" && !source.startsWith("http")
+    detectedRaw === "github" && !source.startsWith("http")
       ? githubShortToHttps(source)
       : source;
   const detected = installSourceKind(resolvedSource);
@@ -258,7 +266,13 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
       const realName = resolveInstalledName(finalSource);
       const c = await checkPluginHeadless(cli, realName);
       // 检测记录必须 await 完成，否则紧接着打开插件中心可能触发哨兵重复检测/通知
-      if (watchContext && c.ran) await new PluginWatch(watchContext).markChecked([realName]);
+      if (watchContext && c.ran) {
+        try {
+          await new PluginWatch(watchContext).markChecked([realName]);
+        } catch {
+          // globalState 写入失败只影响后续哨兵去重，不阻塞安装结果展示
+        }
+      }
       return { res: r, check: c };
     }
   );
@@ -362,7 +376,13 @@ async function installPlugin(cli: ResolvedCli, packageName: string): Promise<voi
       const r = await runPluginCommand(cli, "add", packageName);
       if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
       const c = await checkPluginHeadless(cli, packageName);
-      if (watchContext && c.ran) await new PluginWatch(watchContext).markChecked([packageName]);
+      if (watchContext && c.ran) {
+        try {
+          await new PluginWatch(watchContext).markChecked([packageName]);
+        } catch {
+          // 同 installFromSource：写入失败不阻塞安装结果展示
+        }
+      }
       return { res: r, check: c };
     }
   );

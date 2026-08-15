@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { StringDecoder } from "string_decoder";
+import { t } from "./i18n";
 
 /** 归一化后的流式进度消息（发送给 Webview 展示思维链 / 工具调用）。 */
 export type ProgressMessage =
@@ -227,7 +228,7 @@ export class SessionTracer {
           kind: "goal",
           id,
           operation: String(data.operation ?? "update"),
-          objective: objective || "（无目标描述）",
+          objective: objective || t("（无目标描述）", "(no objective)"),
           phase: String(goal.phase ?? ""),
         };
       }

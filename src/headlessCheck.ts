@@ -154,7 +154,23 @@ export function parseDumpConfig(
 
 /** 对已安装插件执行 headless 兼容性检测。 */
 export async function checkPluginHeadless(cli: ResolvedCli, packageName: string): Promise<HeadlessCheckResult> {
-  const { stdout, stderr, exitCode, timedOut } = await runDumpConfig(cli);
+  let stdout: string;
+  let stderr: string;
+  let exitCode: number | null;
+  let timedOut: boolean;
+  try {
+    ({ stdout, stderr, exitCode, timedOut } = await runDumpConfig(cli));
+  } catch (err) {
+    return {
+      level: "fail",
+      packageName,
+      ran: false,
+      hasPatchBlock: false,
+      matchedEntries: [],
+      missingEntries: [],
+      summary: `compatibility check could not run (${err instanceof Error ? err.message : String(err)}).`,
+    };
+  }
   const dump = stdout + "\n" + stderr;
   if (timedOut || exitCode !== 0 || (stdout.trim() === "" && stderr.trim() === "")) {
     return {

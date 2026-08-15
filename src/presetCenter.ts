@@ -5,8 +5,9 @@ import {
   listEnabledPresets,
   enablePreset,
   disablePreset,
+  profilePatchPath,
 } from "./presetManager";
-import { t } from "./i18n";
+import { t, tf } from "./i18n";
 
 /** 模式预设中心：启用/停用 DSH 原生行为预设（写入 headless cordis.patch.yml）。 */
 export async function openPresetCenter(): Promise<void> {
@@ -30,9 +31,12 @@ export async function openPresetCenter(): Promise<void> {
 
   if (rawId === "__help__") {
     void vscode.window.showInformationMessage(
-      t(
-        "DSH 模式预设通过修改 headless profile 的 cordis.patch.yml 覆盖 DSH 原生插件配置（last write wins）。\n· 启用后下次任务即生效\n· 停用会移除对应配置行，恢复 DSH 默认行为\n· 配置文件：~/.dsh/profiles/headless/cordis.patch.yml",
-        "DSH mode presets override DSH native plugin config in the headless profile's cordis.patch.yml (last write wins).\n· Enabled → effective on next task\n· Disabled → removes the config lines, restoring DSH defaults\n· Config file: ~/.dsh/profiles/headless/cordis.patch.yml"
+      tf(
+        t(
+          "DSH 模式预设通过修改 headless profile 的 cordis.patch.yml 覆盖 DSH 原生插件配置（last write wins）。\n· 启用后下次任务即生效\n· 停用会移除对应配置行，恢复 DSH 默认行为\n· 配置文件：{0}",
+          "DSH mode presets override DSH native plugin config in the headless profile's cordis.patch.yml (last write wins).\n· Enabled → effective on next task\n· Disabled → removes the config lines, restoring DSH defaults\n· Config file: {0}"
+        ),
+        profilePatchPath()
       ),
       { modal: true }
     );

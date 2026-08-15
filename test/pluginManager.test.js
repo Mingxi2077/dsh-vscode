@@ -215,6 +215,22 @@ test("allowBuildScripts：写入 onlyBuiltDependencies 且幂等", () => {
   }
 });
 
+test("allowBuildScripts：单行 flow 列表安全追加且幂等", () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-plugin-"));
+  try {
+    const file = path.join(root, "pnpm-workspace.yaml");
+    fs.writeFileSync(file, "onlyBuiltDependencies: ['@scope/a']\n", "utf8");
+    assert.equal(allowBuildScripts("b-pkg", file), true);
+    const raw = fs.readFileSync(file, "utf8");
+    assert.ok(raw.includes("['@scope/a', 'b-pkg']"), `应保持 flow 并追加，实际: ${raw}`);
+    // 幂等：已存在不重复
+    assert.equal(allowBuildScripts("b-pkg", file), true);
+    assert.equal((fs.readFileSync(file, "utf8").match(/b-pkg/g) || []).length, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("extractBuiltAllowNames：从真实 pnpm 错误提取包名", () => {
   const { extractBuiltAllowNames } = require("../out/pluginManager.js");
   // 真实 build 许可错误（stdout）

@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { dshHomePath } from "./dshHome";
 import { yamlScalar } from "./settingsEditor";
+import { t } from "./i18n";
 
 /** 用户为当前工作区选择的模型配置（provider/model/思维强度）。 */
 export interface ModelSelection {
@@ -14,6 +15,8 @@ export interface ModelSelection {
 export interface ProviderInfo {
   id: string;
   displayName: string;
+  /** 英文展示名（默认回退 displayName）。 */
+  displayNameEn?: string;
   /** 该提供商读取 API Key 的环境变量名（如 DEEPSEEK_API_KEY）。 */
   apiKeyEnv?: string;
   /** 该提供商是否是 DSH/pi-ai 内置 catalog provider（只需 apiKeyEnv 即用）。 */
@@ -22,12 +25,15 @@ export interface ProviderInfo {
   models?: string[];
   /** 需要额外说明的接入方式（如 OAuth / 特殊 env）。 */
   note?: string;
+  /** note 的英文版。 */
+  noteEn?: string;
 }
 
 /** 内置 deepseek-official 提供商（DSH 出厂自带，无需配置）。 */
 export const DEEPSEEK_PROVIDER: ProviderInfo = {
   id: "deepseek-official",
   displayName: "DeepSeek 官方（内置）",
+  displayNameEn: "DeepSeek Official (built-in)",
   apiKeyEnv: "DEEPSEEK_API_KEY",
 };
 
@@ -72,7 +78,7 @@ export const CATALOG_PROVIDERS: ProviderInfo[] = [
   { id: "deepseek", displayName: "DeepSeek (catalog)", apiKeyEnv: "DEEPSEEK_API_KEY", catalog: true,
     models: ["deepseek-v4-flash", "deepseek-v4-pro"] },
   { id: "github-copilot", displayName: "GitHub Copilot", apiKeyEnv: "COPILOT_GITHUB_TOKEN", catalog: true,
-    models: [], note: "需 GitHub Copilot 订阅 token（fine-grained 含 Copilot 权限）" },
+    models: [], note: "需 GitHub Copilot 订阅 token（fine-grained 含 Copilot 权限）", noteEn: "Requires a GitHub Copilot subscription token (fine-grained with Copilot permission)" },
 ];
 
 /** 查找内置 catalog provider（按 id）。 */
@@ -85,11 +91,16 @@ export function isCatalogProvider(id: string): boolean {
   return !!catalogProviderById(id);
 }
 
+/** 按当前 UI 语言返回 provider 展示名。 */
+export function providerUiName(provider: ProviderInfo): string {
+  return t(provider.displayName, provider.displayNameEn ?? provider.displayName);
+}
+
 /** 友好显示名：catalog 用内置 displayName，自定义用 settings 里的，默认回退 id。 */
 export function providerDisplayName(providerId: string, settingsPath = defaultSettingsPath()): string {
-  if (providerId === DEEPSEEK_PROVIDER.id) return DEEPSEEK_PROVIDER.displayName;
+  if (providerId === DEEPSEEK_PROVIDER.id) return providerUiName(DEEPSEEK_PROVIDER);
   const cat = catalogProviderById(providerId);
-  if (cat) return cat.displayName;
+  if (cat) return providerUiName(cat);
   const cp = readCustomProviders(settingsPath).find((p) => p.id === providerId);
   return cp?.displayName || providerId;
 }
@@ -219,7 +230,13 @@ export function loadSelection(globalStorageDir: string, folderHash: string): Mod
   try {
     const raw = fs.readFileSync(stateFile(globalStorageDir, folderHash), "utf8");
     const parsed = JSON.parse(raw) as ModelSelection;
-    return parsed.provider && parsed.model ? parsed : undefined;
+    // 状态文件可能被手改/损坏：字段类型不对时按无选择处理，避免后续 YAML 转义崩溃
+    if (typeof parsed.provider !== "string" || typeof parsed.model !== "string") return undefined;
+    if (!parsed.provider || !parsed.model) return undefined;
+    if (parsed.reasoningEffort !== undefined && typeof parsed.reasoningEffort !== "string") {
+      parsed.reasoningEffort = undefined;
+    }
+    return parsed;
   } catch {
     return undefined;
   }
@@ -287,7 +304,7 @@ export function writeModelPatch(
       "# dsh-harness-vscode 生成的模型选择补丁（由 /provider /model /effort 管理）",
       "- id: settings",
       "  config:",
-      `    path: ${settingsFile.replace(/\\/g, "/")}`,
+      `    path: ${yamlScalar(settingsFile.replace(/\\/g, "/"))}`,
     ].join("\n") + "\n",
     "utf8"
   );

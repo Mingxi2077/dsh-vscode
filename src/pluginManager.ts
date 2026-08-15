@@ -309,6 +309,21 @@ export function allowBuildScripts(pkgName: string, file = pnpmWorkspacePath()): 
     if (new RegExp(`^\\s*-\\s*['"]?${escaped}['"]?\\s*$`, "m").test(raw)) {
       return true;
     }
+    // 单行 flow 列表 onlyBuiltDependencies: ['a', 'b']：先在 flow 内查重，再追加元素
+    const flow = raw.match(/^\s*onlyBuiltDependencies:\s*\[([^\]]*)\]\s*$/m);
+    if (flow) {
+      const inner = flow[1].trim();
+      if (new RegExp(`(?:^|,)\\s*['"]?${escaped}['"]?\\s*(?=,|$)`).test(inner)) {
+        return true;
+      }
+      const item = "'" + pkgName.replace(/'/g, "''") + "'";
+      const next = raw.replace(
+        /^(\s*onlyBuiltDependencies:\s*)\[[^\]]*\]\s*$/m,
+        `$1[${inner ? `${inner}, ` : ""}${item}]`
+      );
+      writeWorkspaceFile(file, next);
+      return true;
+    }
     // 规范化：把 "onlyBuiltDependencies:  - 'x'"（键+内联列表）拆成两行；
     // 以及 "onlyBuiltDependencies: []"（内联空列表）→ 块序列头（避免同一键同时有流式值与块序列）
     raw = raw.replace(/(onlyBuiltDependencies:)\s+(-[^\n]*)/g, "$1\n  $2");
@@ -369,10 +384,17 @@ export function runPluginCommand(
       cli.kind === "entry"
         ? ["--expose-internals", cli.entry, "plugin", "--profile", "headless", action, packageName]
         : ["plugin", "--profile", "headless", action, packageName];
-    const child = spawnCliChild(cli, args, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    let child: ReturnType<typeof spawnCliChild>;
+    try {
+      child = spawnCliChild(cli, args, {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err) {
+      // spawn 同步抛错（如参数非法）也要归一化成结果对象，不能变成未处理 rejection
+      resolve({ ok: false, message: `spawn failed: ${err instanceof Error ? err.message : String(err)}` });
+      return;
+    }
     let stdout = "";
     let stderr = "";
     let graceTimer: NodeJS.Timeout | undefined;
@@ -417,7 +439,12 @@ export function runPluginCommand(
         if (names.length > 0) {
           const allowed = names.every((n) => allowBuildScripts(n));
           if (allowed) {
-            void runPluginCommand(cli, action, packageName, retryCount + 1).then(resolve);
+            void runPluginCommand(cli, action, packageName, retryCount + 1).then(resolve, (err) =>
+              resolve({
+                ok: false,
+                message: `retry failed: ${err instanceof Error ? err.message : String(err)}`,
+              })
+            );
             return;
           }
         }
