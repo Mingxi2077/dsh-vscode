@@ -13,6 +13,7 @@ import { registerChatParticipant } from "./chatParticipant";
 import { registerSidebarView } from "./sidebar";
 import { openPluginCenter, pluginStatusSummary } from "./pluginCenter";
 import { openPresetCenter, presetStatusSummary } from "./presetCenter";
+import { PluginWatch } from "./pluginWatch";
 import { t, tf } from "./i18n";
 
 /** 检查 llm-pi-ai.providers 配置的可服务性（返回多行说明）。 */
@@ -219,6 +220,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const envProvider = createEnvProvider(secrets);
   let panel: ChatPanel | undefined;
 
+  // 插件"哨兵"：发现 profile 里未检测过的新插件（无论谁安装）自动补兼容性检测
+  const pluginWatch = new PluginWatch(context);
+
   // @dsh-agent 聊天参与者（内置 Chat 中 @ 唤起）
   context.subscriptions.push(registerChatParticipant(context, cliProvider, envProvider, log));
 
@@ -226,8 +230,13 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(registerSidebarView(context));
 
   context.subscriptions.push(
-    // 插件中心：浏览已装插件（只读视图）
-    vscode.commands.registerCommand("dsh-harness-vscode.pluginCenter", () => {
+    // 插件中心：浏览已装插件（只读视图）；打开前先补一次新插件检测
+    vscode.commands.registerCommand("dsh-harness-vscode.pluginCenter", async () => {
+      try {
+        await pluginWatch.checkOnce(await cliProvider());
+      } catch {
+        // 检测失败不阻塞插件中心
+      }
       void openPluginCenter(cliProvider);
     }),
 
@@ -528,6 +537,13 @@ export function activate(context: vscode.ExtensionContext): void {
       chat.showMemory();
     })
   );
+
+  // 启动后延迟检测一次新插件（不阻塞激活；无新插件时完全静默）
+  setTimeout(() => {
+    void cliProvider()
+      .then((cli) => pluginWatch.checkOnce(cli))
+      .catch(() => {});
+  }, 5000);
 }
 
 export function deactivate(): void {

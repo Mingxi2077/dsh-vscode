@@ -20,6 +20,20 @@ import { ResolvedCli } from "./cli";
 
 export type HeadlessCheckLevel = "ok" | "warning" | "inactive" | "fail";
 
+/** 检测级别的展示图标（供插件中心与自动提醒共用）。 */
+export function compatLevelIcon(level: HeadlessCheckLevel): string {
+  switch (level) {
+    case "ok":
+      return "✅";
+    case "warning":
+      return "⚠️";
+    case "inactive":
+      return "⚪";
+    default:
+      return "❌";
+  }
+}
+
 export interface HeadlessCheckResult {
   level: HeadlessCheckLevel;
   /** 检测的包名。 */

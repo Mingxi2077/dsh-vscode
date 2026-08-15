@@ -12,6 +12,7 @@ import { extractCodeBlocks } from "./codeBlocks";
 import { applyCodeBlock } from "./applyCode";
 import { renderChatHtml } from "./webviewHtml";
 import { SecretStore } from "./secrets";
+import { PluginWatch } from "./pluginWatch";
 import {
   ModelSelection,
   loadSelection,
@@ -89,6 +90,7 @@ export class ChatPanel {
   private readonly status: StatusBar;
   private readonly secrets: SecretStore;
   private readonly log?: (line: string) => void;
+  private readonly context: vscode.ExtensionContext;
   memory: ProjectMemory;
   private folder: vscode.WorkspaceFolder;
   private folderHash = "";
@@ -116,6 +118,7 @@ export class ChatPanel {
     this.status = status;
     this.secrets = secrets;
     this.log = log;
+    this.context = context;
     this.folder = folder;
     this.globalStorageDir = context.globalStorageUri.fsPath;
     this.extensionPath = context.extensionPath;
@@ -539,6 +542,9 @@ export class ChatPanel {
         signal: abort.signal,
       });
 
+      // 任务中 agent 可能直接装了插件（绕过插件中心 UI）：自动补一次兼容性检测
+      void new PluginWatch(this.context).checkOnce(cli).catch(() => {});
+
       tracer?.finish();
       await tracerDone;
 
@@ -661,6 +667,8 @@ export class ChatPanel {
         env,
         signal: abort.signal,
       });
+      // 后台工具子任务也可能安装插件：同样补一次检测
+      void new PluginWatch(this.context).checkOnce(cli).catch(() => {});
       return result.code === 0 ? result.stdout.trim() || null : null;
     } catch {
       return null;

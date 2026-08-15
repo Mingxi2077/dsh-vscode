@@ -107,6 +107,16 @@ export function isActive(packageName: string): boolean {
   return readInstalledPlugins().some((p) => p.packageName === packageName && p.active);
 }
 
+/** 官方核心 bundles，不参与兼容性检测。 */
+export const OFFICIAL_BUNDLES = new Set(["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless"]);
+
+/** 找出未检测过的新插件（排除官方 bundles）。纯函数，便于测试。
+ * 用于"哨兵"：无论插件由谁安装（插件中心 UI / 聊天中 agent / 外部），都能被发现。 */
+export function findNewPlugins(installed: InstalledPlugin[], checked: string[]): InstalledPlugin[] {
+  const checkedSet = new Set(checked);
+  return installed.filter((p) => !OFFICIAL_BUNDLES.has(p.packageName) && !checkedSet.has(p.packageName));
+}
+
 export interface PluginCommandResult {
   ok: boolean;
   message: string;
