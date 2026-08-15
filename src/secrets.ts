@@ -25,7 +25,9 @@ export class SecretStore {
 
   private saveIndex(names: string[]): void {
     fs.mkdirSync(path.dirname(this.indexFile), { recursive: true });
-    fs.writeFileSync(this.indexFile, JSON.stringify([...new Set(names)]), "utf8");
+    const tmp = `${this.indexFile}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify([...new Set(names)]), "utf8");
+    fs.renameSync(tmp, this.indexFile);
   }
 
   async get(name: string): Promise<string | undefined> {

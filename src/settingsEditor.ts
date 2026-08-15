@@ -1,6 +1,6 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { dshHomePath } from "./dshHome";
 
 /**
  * 用户 ~/.dsh/settings.yaml 中 llm-pi-ai.providers 段的编辑器。
@@ -19,9 +19,7 @@ export interface LlmProviderProfile {
 }
 
 export function settingsPath(): string {
-  return process.env.DSH_HOME
-    ? path.join(process.env.DSH_HOME, "settings.yaml")
-    : path.join(os.homedir(), ".dsh", "settings.yaml");
+  return dshHomePath("settings.yaml");
 }
 
 /** 读取 settings.yaml 原文（不存在返回空串）。 */
@@ -46,9 +44,9 @@ export function hasProvider(raw: string, providerId: string): boolean {
       if (content === "llm-pi-ai:") inPi = true;
       continue;
     }
-    if (indent === 0 && content) break; // 离开 llm-pi-ai 块
+    if (indent === 0 && content && !content.startsWith("#")) break; // 离开 llm-pi-ai 块（顶层注释不算）
     if (content === "providers:" && indent === 2) { inProviders = true; continue; }
-    if (indent < 4 && content) inProviders = false;
+    if (indent < 4 && content && !content.startsWith("#")) inProviders = false;
     if (inProviders && indent === 4 && /^[A-Za-z0-9_-]+:$/.test(content)) {
       if (content.slice(0, -1) === providerId) return true;
     }
@@ -81,7 +79,7 @@ export function upsertProvider(raw: string, profile: LlmProviderProfile): string
   for (let i = piIndex + 1; i < lines.length; i++) {
     const indent = (lines[i].match(/^ */)?.[0].length ?? 0);
     const content = lines[i].trim();
-    if (indent === 0 && content) break;
+    if (indent === 0 && content && !content.startsWith("#")) break;
     if (indent === 2 && content === "providers:") { providersIndex = i; break; }
   }
 
@@ -101,8 +99,8 @@ export function upsertProvider(raw: string, profile: LlmProviderProfile): string
   for (let i = providersIndex + 1; i < lines.length; i++) {
     const indent = (lines[i].match(/^ */)?.[0].length ?? 0);
     const content = lines[i].trim();
-    if (indent <= 2 && content) {
-      // 离开 providers 段：若正在扫描目标 provider，则其结束于本行
+    if (indent <= 2 && content && !content.startsWith("#")) {
+      // 离开 providers 段（顶层/同缩进注释不算结构边界）：若正在扫描目标 provider，则其结束于本行
       if (providerStart >= 0) providerEnd = i;
       break;
     }
@@ -130,7 +128,8 @@ export function upsertProvider(raw: string, profile: LlmProviderProfile): string
   while (insertAt < lines.length) {
     const l = lines[insertAt];
     const ind = (l.match(/^ */)?.[0].length ?? 0);
-    if (l.trim() !== "" && ind <= 2) break; // 缩进 0/2 的非空行 = 离开 providers 段
+    // 缩进 0/2 的非空、非注释行 = 离开 providers 段
+    if (l.trim() !== "" && !l.trim().startsWith("#") && ind <= 2) break;
     insertAt++;
   }
   lines.splice(insertAt, 0, ...block.split(/\r?\n/));
@@ -153,16 +152,39 @@ function renderProviderBlock(profile: LlmProviderProfile): string {
   return out.join("\n");
 }
 
-/** 简单 YAML 标量：含特殊字符时加引号。 */
-function yamlScalar(value: string): string {
+/** 简单 YAML 标量：含特殊字符/换行时安全地加双引号（换行转义为 \n，避免生成非法 YAML）。 */
+export function yamlScalar(value: string): string {
   if (/^[A-Za-z0-9_./:-]+$/.test(value) && !/^[-0-9]/.test(value)) return value;
-  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const escaped = value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t");
   return `"${escaped}"`;
 }
 
 /** 为 catalog provider 生成最小配置块（只写 apiKeyEnv，不写 models——模型由 DSH 目录提供，升级不失效）。 */
 export function catalogProfile(id: string, apiKeyEnv: string, displayName?: string): LlmProviderProfile {
   return { id, apiKeyEnv, displayName };
+}
+
+/** 只保留最近 keep 份 .bak-* 备份，防止 ~/.dsh 被备份文件堆满。 */
+function cleanupBackups(file: string, keep = 5): void {
+  try {
+    const dir = path.dirname(file);
+    const prefix = path.basename(file) + ".bak-";
+    const backups = fs
+      .readdirSync(dir)
+      .filter((n) => n.startsWith(prefix))
+      .map((n) => ({ n, t: fs.statSync(path.join(dir, n)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    for (const b of backups.slice(keep)) {
+      fs.rmSync(path.join(dir, b.n), { force: true });
+    }
+  } catch {
+    // 清理失败不影响主流程
+  }
 }
 
 /**
@@ -179,13 +201,18 @@ export function writeProviderToSettings(
   }
   const next = upsertProvider(raw, profile);
   const backup = `${file}.bak-${Date.now()}`;
+  const tmp = `${file}.tmp`;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     if (raw.trim()) fs.writeFileSync(backup, raw, "utf8"); // 仅在文件非空时备份
-    fs.writeFileSync(file, next, "utf8");
+    // 原子写：tmp + rename，崩溃/被杀时不留下截断的 settings.yaml
+    fs.writeFileSync(tmp, next, "utf8");
+    fs.renameSync(tmp, file);
+    cleanupBackups(file);
     return { ok: true, message: `已写入 ~/.dsh/settings.yaml（备份 ${path.basename(backup)}）`, changed: true };
   } catch (err) {
     try {
+      fs.rmSync(tmp, { force: true });
       if (fs.existsSync(backup)) fs.copyFileSync(backup, file);
     } catch {
       // 回滚失败也保留原始错误

@@ -1,6 +1,7 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { dshHomePath } from "./dshHome";
+import { yamlScalar } from "./settingsEditor";
 
 /** 用户为当前工作区选择的模型配置（provider/model/思维强度）。 */
 export interface ModelSelection {
@@ -94,10 +95,8 @@ export function providerDisplayName(providerId: string, settingsPath = defaultSe
 }
 
 export function defaultSettingsPath(): string {
-  // 与 settingsEditor.settingsPath 保持一致：支持 DSH_HOME 覆盖 ~/.dsh
-  return process.env.DSH_HOME
-    ? path.join(process.env.DSH_HOME, "settings.yaml")
-    : path.join(os.homedir(), ".dsh", "settings.yaml");
+  // 与 settingsEditor.settingsPath 保持一致：统一走 dshHome（进程环境/扩展配置注入）
+  return dshHomePath("settings.yaml");
 }
 
 /** 从 settings.yaml 读取 llm-pi-ai.providers（用户自配提供商）。解析失败返回空数组。 */
@@ -241,7 +240,10 @@ export function saveSelection(
     return;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(selection, null, 2), "utf8");
+  // 原子写：tmp + rename，避免崩溃留下截断的状态文件
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(selection, null, 2), "utf8");
+  fs.renameSync(tmp, file);
 }
 
 /** 生成模型选择补丁：把 settings-file.path 指向扩展生成的 settings 覆盖文件。
@@ -257,21 +259,30 @@ export function writeModelPatch(
   fs.mkdirSync(dir, { recursive: true });
 
   // 1. settings 覆盖文件（settings-file.path 指向它）
+  // 值一律走 yamlScalar：手动输入的模型名可能含 : / # / 引号 / 换行，不能裸拼 YAML。
   const settingsFile = path.join(dir, `${folderHash}.settings.yaml`);
-  const lines = ["# dsh-harness-vscode 生成的设置覆盖（模型选择）", "agent-default-model:", `  provider: ${selection.provider}`, `  model: ${selection.model}`];
+  const lines = [
+    "# dsh-harness-vscode 生成的设置覆盖（模型选择）",
+    "agent-default-model:",
+    `  provider: ${yamlScalar(selection.provider)}`,
+    `  model: ${yamlScalar(selection.model)}`,
+  ];
   if (selection.reasoningEffort) {
-    lines.push(`  reasoningEffort: ${selection.reasoningEffort}`);
+    lines.push(`  reasoningEffort: ${yamlScalar(selection.reasoningEffort)}`);
   }
   const piBlock = extractBlock(sourceSettingsPath, "llm-pi-ai");
   if (piBlock) {
     lines.push("", piBlock);
   }
-  fs.writeFileSync(settingsFile, lines.join("\n") + "\n", "utf8");
+  const settingsTmp = `${settingsFile}.tmp`;
+  fs.writeFileSync(settingsTmp, lines.join("\n") + "\n", "utf8");
+  fs.renameSync(settingsTmp, settingsFile);
 
   // 2. 补丁：让 settings-file 读扩展的覆盖文件
   const patchFile = path.join(dir, `${folderHash}.patch.yml`);
+  const patchTmp = `${patchFile}.tmp`;
   fs.writeFileSync(
-    patchFile,
+    patchTmp,
     [
       "# dsh-harness-vscode 生成的模型选择补丁（由 /provider /model /effort 管理）",
       "- id: settings",
@@ -280,6 +291,7 @@ export function writeModelPatch(
     ].join("\n") + "\n",
     "utf8"
   );
+  fs.renameSync(patchTmp, patchFile);
   return patchFile;
 }
 

@@ -27,14 +27,17 @@ export class ProjectMemory {
     }
   }
 
-  /** 追加一条带时间戳的记忆。 */
+  /** 追加一条带时间戳的记忆（tmp+rename 原子写，避免与 agent 并发写坏文件）。 */
   append(text: string): void {
-    const dir = path.dirname(this.file());
+    const file = this.file();
+    const dir = path.dirname(file);
     fs.mkdirSync(dir, { recursive: true });
     const stamp = new Date().toLocaleString(isZh() ? "zh-CN" : "en-US", { hour12: false });
     const entry = `## ${stamp}\n${text.trim()}\n`;
     const existing = this.read().trim();
-    fs.writeFileSync(this.file(), existing ? `${existing}\n${entry}` : entry, "utf8");
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, existing ? `${existing}\n${entry}` : entry, "utf8");
+    fs.renameSync(tmp, file);
   }
 
   /** 拼入任务文本用的记忆摘要（带截断保护）。 */

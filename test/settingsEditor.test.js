@@ -67,6 +67,18 @@ test("hasProvider：识别 llm-pi-ai.providers 内的条目", () => {
   assert.equal(hasProvider(raw, "anthropic"), false);
 });
 
+test("hasProvider / upsertProvider：providers 段内的顶层注释不误判边界、不重复写入", () => {
+  const raw = "llm-pi-ai:\n  providers:\n    lmuai:\n      apiKeyEnv: LMUAI_API_KEY\n# 用户自己的注释（缩进 0，合法 YAML）\n    openai:\n      apiKeyEnv: OPENAI_API_KEY\nagent-default-model:\n  provider: x\n";
+  assert.equal(hasProvider(raw, "openai"), true, "注释不应中断 providers 段扫描");
+  assert.equal(hasProvider(raw, "anthropic"), false);
+  const next = upsertProvider(raw, { id: "anthropic", apiKeyEnv: "ANTHROPIC_API_KEY" });
+  assert.ok(next.includes("# 用户自己的注释"), "应保留用户注释");
+  assert.ok(next.includes("    anthropic:"), "应追加 anthropic");
+  assert.equal((next.match(/    openai:/g) || []).length, 1, "openai 不得重复");
+  assert.equal((next.match(/    anthropic:/g) || []).length, 1, "anthropic 不得重复");
+  assert.ok(next.includes("agent-default-model:"), "不应破坏后续段");
+});
+
 test("catalogProfile：只写 apiKeyEnv + displayName，不写 models（DSH 目录提供）", () => {
   const p = catalogProfile("openai", "OPENAI_API_KEY", "OpenAI");
   assert.deepEqual(p, { id: "openai", apiKeyEnv: "OPENAI_API_KEY", displayName: "OpenAI" });

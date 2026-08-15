@@ -76,6 +76,58 @@ test("SessionTracer：找不到新会话文件时静默结束（不抛错）", a
   }
 });
 
+test("SessionTracer：finish() 后立即停止等待（不拖满 30s 截止时间）", async () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-tracer-"));
+  try {
+    const tracer = new SessionTracer({ DSH_HOME: path.join(root, "nohome") }, Date.now());
+    const started = Date.now();
+    const runPromise = tracer.start(() => {}, new AbortController().signal);
+    await sleep(50);
+    tracer.finish();
+    await runPromise;
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 1500, `finish 后应立即停止等待，实际等待 ${elapsed}ms`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("SessionTracer：跨追加边界拆开的 UTF-8 字符不损坏", async () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-tracer-"));
+  try {
+    const home = path.join(root, "home");
+    const sessionsDir = path.join(home, "sessions-vscode");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const tracer = new SessionTracer({ DSH_HOME: home }, Date.now());
+    const sessionDir = path.join(sessionsDir, "bucket", "session-utf8");
+    fs.mkdirSync(sessionDir, { recursive: true });
+    const log = path.join(sessionDir, "session.jsonl");
+
+    const line =
+      '{"type":"reasoning-chunks","seq":1,"time":1,"data":{"turn":1,"step":1,"index":0,"texts":["你好"]}}\n';
+    const buf = Buffer.from(line, "utf8");
+    // 在“你”字的 UTF-8 字节序列中间切开
+    const cut = buf.indexOf(Buffer.from("你", "utf8")) + 1;
+
+    const messages = [];
+    const runPromise = tracer.start((m) => messages.push(m), new AbortController().signal);
+    await sleep(400);
+    fs.writeFileSync(log, buf.subarray(0, cut));
+    await sleep(350);
+    fs.appendFileSync(log, buf.subarray(cut));
+    await sleep(350);
+    tracer.finish();
+    await runPromise;
+
+    const reasoning = messages.find((m) => m.kind === "reasoning");
+    assert.ok(reasoning, "应收到 reasoning 事件");
+    assert.equal(reasoning.text, "你好", "UTF-8 边界拆分不应产生替换字符");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("SessionTracer：step/start-end、session/title、assistant/chunk block-end 归一化", async () => {
   const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-tracer-"));
   try {

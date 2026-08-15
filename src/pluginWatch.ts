@@ -18,8 +18,8 @@ import { t } from "./i18n";
 
 export class PluginWatch {
   private static readonly KEY = "dsh.checkedPlugins.v1";
-  /** 防重入：多个触发点（激活/聊天任务结束/插件中心打开）可能并发调用。 */
-  private running = false;
+  /** 防重入：static 保证多个 PluginWatch 实例（激活定时器/聊天任务结束/插件中心）也串行。 */
+  private static running = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -38,12 +38,12 @@ export class PluginWatch {
 
   /** 检测一次新插件；没有新插件时完全静默。返回检测到的新插件数。 */
   async checkOnce(cli: ResolvedCli): Promise<number> {
-    if (this.running) return 0;
-    this.running = true;
+    if (PluginWatch.running) return 0;
+    PluginWatch.running = true;
     try {
       return await this.doCheck(cli);
     } finally {
-      this.running = false;
+      PluginWatch.running = false;
     }
   }
 

@@ -1,6 +1,6 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { dshHomePath } from "./dshHome";
 
 /** 一个可用的技能（目录 + frontmatter 元信息）。 */
 export interface SkillInfo {
@@ -12,7 +12,7 @@ export interface SkillInfo {
 /** 扫描技能根目录（用户级 ~/.dsh/skills 与项目级 <project>/.dsh/skills）。 */
 export function listSkills(projectRoot: string): SkillInfo[] {
   const roots = [
-    path.join(os.homedir(), ".dsh", "skills"),
+    dshHomePath("skills"),
     path.join(projectRoot, ".dsh", "skills"),
   ];
   const out: SkillInfo[] = [];

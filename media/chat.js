@@ -58,6 +58,7 @@
     messages: [],
     blocks: [],
     running: false,
+    busy: false,
     runStartedAt: 0,
     folder: "",
     usage: null, // {input, output, cacheRead, reasoning, model, provider, effort}
@@ -557,10 +558,22 @@
     }
   }
 
+  function updateActionState() {
+    els.send.disabled = state.running || state.busy;
+    els.cancel.hidden = !state.running;
+    // busy（如 /compact）期间不允许新建/切换会话，否则压缩结果会套到新会话上
+    els.btnNew.disabled = state.busy;
+    els.btnSessions.disabled = state.busy;
+  }
+
+  function setBusy(busy) {
+    state.busy = !!busy;
+    updateActionState();
+  }
+
   function setRunning(running) {
     state.running = running;
-    els.send.disabled = running;
-    els.cancel.hidden = !running;
+    updateActionState();
     if (running) {
       state.runStartedAt = Date.now();
       updateElapsed();
@@ -586,7 +599,7 @@
 
   function sendInput() {
     const text = els.input.value;
-    if (!text.trim() || state.running) return;
+    if (!text.trim() || state.running || state.busy) return;
     const cmdMatch = text.trim().match(/^\/(help|clear|memory|edit-memory|remember|context|provider|model|effort|skills|compact|status)(\s|$)/);
     if (cmdMatch) {
       els.input.value = "";
@@ -635,6 +648,8 @@
         navigator.clipboard.writeText(msg.content).then(() => {
           btn.textContent = t("copied");
           setTimeout(() => (btn.textContent = t("copy")), 1200);
+        }).catch(() => {
+          // 剪贴板不可用时静默降级，避免 webview 出现未处理 Promise 拒绝
         });
       } else if (btn.dataset.act === "insert") {
         post({ type: "insertCode", id });
@@ -672,6 +687,7 @@
         state.usage = msg.usage || null;
         state.skills = msg.skills || [];
         setRunning(!!msg.running);
+        setBusy(!!msg.busy);
         renderContextBar();
         renderUsageBar();
         render();
@@ -702,6 +718,9 @@
         break;
       case "running":
         setRunning(!!msg.running);
+        break;
+      case "busy":
+        setBusy(!!msg.busy);
         break;
       case "sessionChanged":
         state.sessionId = msg.sessionId;

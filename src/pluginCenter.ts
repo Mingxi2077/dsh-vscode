@@ -12,9 +12,10 @@ import {
   installSourceKind,
   githubShortToHttps,
   resolveInstalledName,
+  OFFICIAL_BUNDLES,
 } from "./pluginManager";
 import { ResolvedCli } from "./cli";
-import { t } from "./i18n";
+import { t, tf } from "./i18n";
 import { checkPluginHeadless, HeadlessCheckResult } from "./headlessCheck";
 import { PluginWatch } from "./pluginWatch";
 
@@ -42,13 +43,14 @@ export async function openPluginCenter(cliProvider: () => Promise<ResolvedCli>, 
     await showPluginBrowser(cli);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(`插件中心：无法解析 dsh 命令：${message}`);
+    void vscode.window.showErrorMessage(tf(t("插件中心：无法解析 dsh 命令：{0}", "Plugin Center: cannot resolve dsh command: {0}"), message));
   }
 }
 
 /** 主浏览界面：已装插件 + 精选可装插件，带安装/卸载/详情动作。 */
 async function showPluginBrowser(cli: ResolvedCli): Promise<void> {
-  const installed = readInstalledPlugins();
+  // 官方核心 bundle 不是“用户插件”，绝不能出现在可卸载列表中
+  const installed = readInstalledPlugins().filter((p) => !OFFICIAL_BUNDLES.has(p.packageName));
   const installedNames = new Set(installed.map((p) => p.packageName));
 
   const pick = await vscode.window.showQuickPick(
@@ -164,6 +166,8 @@ async function runCompatibilityCheck(cli: ResolvedCli, packageName: string): Pro
     { location: vscode.ProgressLocation.Notification, title: t("正在检测 {0} 的 headless 兼容性…", "Checking headless compatibility of {0}…").replace("{0}", packageName) },
     () => checkPluginHeadless(cli, packageName)
   );
+  // 手动检测成功后同样写入哨兵记录，避免下次打开插件中心重复通知
+  if (watchContext && check.ran) await new PluginWatch(watchContext).markChecked([packageName]);
   const label = compatCheckLabel(check);
   const body =
     check.level === "ok"
@@ -253,7 +257,8 @@ async function installFromSource(cli: ResolvedCli): Promise<void> {
       if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
       const realName = resolveInstalledName(finalSource);
       const c = await checkPluginHeadless(cli, realName);
-      if (watchContext) void new PluginWatch(watchContext).markChecked([realName]);
+      // 检测记录必须 await 完成，否则紧接着打开插件中心可能触发哨兵重复检测/通知
+      if (watchContext && c.ran) await new PluginWatch(watchContext).markChecked([realName]);
       return { res: r, check: c };
     }
   );
@@ -357,7 +362,7 @@ async function installPlugin(cli: ResolvedCli, packageName: string): Promise<voi
       const r = await runPluginCommand(cli, "add", packageName);
       if (!r.ok) return { res: r, check: undefined as HeadlessCheckResult | undefined };
       const c = await checkPluginHeadless(cli, packageName);
-      if (watchContext) void new PluginWatch(watchContext).markChecked([packageName]);
+      if (watchContext && c.ran) await new PluginWatch(watchContext).markChecked([packageName]);
       return { res: r, check: c };
     }
   );
@@ -365,6 +370,16 @@ async function installPlugin(cli: ResolvedCli, packageName: string): Promise<voi
 }
 
 async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<void> {
+  // 防线：即使未来 UI 误暴露官方 bundle，也拒绝卸载
+  if (OFFICIAL_BUNDLES.has(packageName)) {
+    void vscode.window.showWarningMessage(
+      t(
+        `「${packageName}」是 DSH 官方核心 bundle，不可从插件中心卸载。`,
+        `"${packageName}" is an official DSH core bundle and cannot be uninstalled from the Plugin Center.`
+      )
+    );
+    return;
+  }
   const confirm = await vscode.window.showWarningMessage(
     t(
       `将卸载插件 ${packageName}（从 headless profile 移除）。继续？`,
@@ -383,7 +398,7 @@ async function uninstallPlugin(cli: ResolvedCli, packageName: string): Promise<v
 
 /** 供"检查环境"输出插件状态。 */
 export function pluginStatusSummary(): string[] {
-  const installed = readInstalledPlugins();
+  const installed = readInstalledPlugins().filter((p) => !OFFICIAL_BUNDLES.has(p.packageName));
   if (installed.length === 0) return [t("headless profile 无额外插件（仅官方 bundles）", "No extra plugins in the headless profile (official bundles only)")];
   return installed.map((p) => {
     const feat = featuredPlugin(p.packageName);

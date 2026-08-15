@@ -1,6 +1,6 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { dshHomePath } from "./dshHome";
 
 /**
  * DSH 原生模式预设管理：读写 headless profile 的 cordis.patch.yml。
@@ -50,8 +50,7 @@ export function presetById(id: string): PresetDef | undefined {
 
 /** headless profile 的 cordis.patch.yml 路径。 */
 export function profilePatchPath(): string {
-  const home = process.env.DSH_HOME || path.join(os.homedir(), ".dsh");
-  return path.join(home, "profiles", "headless", "cordis.patch.yml");
+  return dshHomePath("profiles", "headless", "cordis.patch.yml");
 }
 
 /** 读取 patch 原文（不存在返回默认模板；已存在但无数组内容时补 []，保证 DSH 可解析）。 */
@@ -61,7 +60,7 @@ export function readPatch(file = profilePatchPath()): string {
     if (raw.trim()) {
       // DSH 要求顶层是 YAML 数组：若内容里没有任何条目，补上空数组模板
       const hasEntries =
-        raw.split(/\r?\n/).some((l) => /^\s*-\s*id:/.test(l)) || /\[[^\]]*-\s*id:/.test(raw);
+        raw.split(/\r?\n/).some((l) => /^\s*-\s*id:/.test(l)) || /\[[^\]]*-\s*id:/.test(raw) || /\[\s*[^\]]*["']?id["']?\s*:/.test(raw);
       if (!hasEntries && !/\[\s*\]/.test(raw)) {
         return raw.trimEnd() + "\n[]\n";
       }
@@ -118,6 +117,24 @@ function renderPresetEntry(preset: PresetDef): string {
   }
 }
 
+/** 只保留最近 keep 份 .bak-* 备份。 */
+function cleanupPatchBackups(file: string, keep = 5): void {
+  try {
+    const dir = path.dirname(file);
+    const prefix = path.basename(file) + ".bak-";
+    const backups = fs
+      .readdirSync(dir)
+      .filter((n) => n.startsWith(prefix))
+      .map((n) => ({ n, t: fs.statSync(path.join(dir, n)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    for (const b of backups.slice(keep)) {
+      fs.rmSync(path.join(dir, b.n), { force: true });
+    }
+  } catch {
+    // 清理失败不影响主流程
+  }
+}
+
 /** 原子写入：临时文件 + rename，失败时回滚。写前备份原文件（若非空）。 */
 function writePatchFile(file: string, next: string): void {
   const backup = `${file}.bak-${Date.now()}`;
@@ -133,6 +150,7 @@ function writePatchFile(file: string, next: string): void {
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, next, "utf8");
     fs.renameSync(tmp, file);
+    cleanupPatchBackups(file);
   } catch (err) {
     // 回滚：恢复备份
     if (fs.existsSync(backup)) fs.copyFileSync(backup, file);
@@ -151,6 +169,14 @@ export function enablePreset(
     return { ok: true, message: "already-enabled", presetName: preset.name, enPresetName: preset.enName };
   }
   const raw = readPatch(file);
+  // flow 集合（[{- id:...} 或 [{"id":...}]）已含条目时无法安全地混入块式条目，拒绝而不是写坏文件
+  if (/\[[^\]]*-\s*id:/.test(raw) || /\[\s*[^\]]*["']?id["']?\s*:/.test(raw)) {
+    return {
+      ok: false,
+      message:
+        "cordis.patch.yml uses flow-style entries; the preset editor only supports block-style top-level arrays. Convert it to block style (- id: ...) first.",
+    };
+  }
   const entry = renderPresetEntry(preset);
   const next = insertIntoPatch(raw, entry);
   try {

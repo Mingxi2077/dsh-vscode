@@ -45,7 +45,7 @@ export function registerChatParticipant(
     }
 
     const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-    const extraArgs = cfg.get<string[]>("extraArgs", []);
+    const extraArgs = [...(cfg.get<string[]>("extraArgs", []) ?? [])];
     const timeoutSec = cfg.get<number>("timeoutSeconds", 600);
     const streamProgress = cfg.get<boolean>("streamProgress", true);
 
@@ -64,9 +64,10 @@ export function registerChatParticipant(
     const sub = token.onCancellationRequested(() => abort.abort());
 
     let tracer: SessionTracer | undefined;
+    let tracerDone: Promise<void> = Promise.resolve();
     if (streamProgress) {
       tracer = new SessionTracer(env, Date.now(), log);
-      void tracer.start((msg) => {
+      tracerDone = tracer.start((msg) => {
         if (msg.kind === "tool") stream.progress(tf(t("执行工具：{0}", "Running tool: {0}"), msg.name));
         else if (msg.kind === "turn" && msg.turn > 0) stream.progress(tf(t("第 {0} 轮", "Round {0}"), msg.turn));
       }, abort.signal);
@@ -79,7 +80,6 @@ export function registerChatParticipant(
         env,
         signal: abort.signal,
       });
-      tracer?.finish();
 
       if (token.isCancellationRequested) {
         stream.markdown(t("已取消。", "Cancelled."));
@@ -98,9 +98,12 @@ export function registerChatParticipant(
       return { metadata: {} };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      stream.markdown(`运行 DSH 失败：${message}`);
+      stream.markdown(tf(t("运行 DSH 失败：{0}", "Failed to run DSH: {0}"), message));
       return { metadata: {} };
     } finally {
+      // 无论成功/异常/取消都结束 tracer 并等待排空，避免后台轮询泄漏
+      tracer?.finish();
+      await tracerDone;
       sub.dispose();
     }
   });

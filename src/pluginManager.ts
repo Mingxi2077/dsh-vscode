@@ -1,8 +1,6 @@
 import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
-import { spawn } from "child_process";
-import { ResolvedCli } from "./cli";
+import { ResolvedCli, spawnCliChild } from "./cli";
+import { dshHomePath } from "./dshHome";
 
 /**
  * DSH 插件管理：操作 headless profile 的插件（bundle 激活 / 非 bundle 依赖）。
@@ -65,8 +63,7 @@ export function featuredPlugin(packageName: string): PluginInfo | undefined {
 
 /** headless profile 的 package.json 路径。 */
 export function profilePackageJsonPath(): string {
-  const home = process.env.DSH_HOME || path.join(os.homedir(), ".dsh");
-  return path.join(home, "profiles", "headless", "package.json");
+  return dshHomePath("profiles", "headless", "package.json");
 }
 
 export interface InstalledPlugin {
@@ -107,6 +104,17 @@ export function isActive(packageName: string): boolean {
   return readInstalledPlugins().some((p) => p.packageName === packageName && p.active);
 }
 
+/** 把各种 GitHub 写法归一化成 owner/repo（非 GitHub 输入返回 undefined）。
+ * git+https://github.com/owner/repo.git / github:owner/repo / https://github.com/owner/repo 都归一。 */
+function normalizeGithubSpec(spec: string): string | undefined {
+  const s = spec.trim();
+  const m =
+    s.match(/^(?:git\+)?https?:\/\/github\.com\/([^/\s#]+)\/([^/\s#]+?)(?:\.git)?(?:[#/].*)?$/i) ||
+    s.match(/^github:([^/\s#]+)\/([^/\s#]+?)(?:\.git)?(?:#.*)?$/i);
+  if (!m) return undefined;
+  return `${m[1]}/${m[2]}`;
+}
+
 /** 通过依赖 spec（URL / github 短名 / 本地路径）反查 profile 里真实的包名。
  * 例如 spec=git+https://…/dsh-artifact.git → 真实包名 @dsh-external/dsh-artifact；
  * npm 包名输入则原样返回。
@@ -122,11 +130,16 @@ export function resolveInstalledName(spec: string): string {
     const looksLikeUrlOrPath =
       s.includes("://") || s.startsWith("git+") || s.startsWith("github:") || s.startsWith("file:") ||
       /^[A-Za-z]:[\\/]/.test(s) || s.startsWith("./") || s.startsWith("../") || s.endsWith(".git");
+    // GitHub 写法归一化：pnpm 落盘常用 github:owner/repo，而扩展安装时传 git+https URL
+    const githubKey = normalizeGithubSpec(s);
     for (const [name, specVal] of Object.entries(deps)) {
+      const val = String(specVal);
       // 2) 依赖 spec 值精确等于输入
-      if (String(specVal) === s) return name;
-      // 3) 仅当输入像 URL/路径时，才允许 spec 值包含输入（如完整 URL 长于输入）
-      if (looksLikeUrlOrPath && String(specVal).includes(s)) return name;
+      if (val === s) return name;
+      // 3) GitHub 仓库：owner/repo 归一化后精确相等才算（避免子串误命中）
+      if (githubKey && normalizeGithubSpec(val) === githubKey) return name;
+      // 4) 仅当输入像 URL/路径时，才允许 spec 值包含输入（如完整 URL 长于输入）
+      if (looksLikeUrlOrPath && val.includes(s)) return name;
     }
   } catch {
     /* ignore */
@@ -277,8 +290,14 @@ export function extractBuiltAllowNames(output: string): string[] {
 
 /** headless profile 的 pnpm-workspace.yaml 路径。 */
 export function pnpmWorkspacePath(): string {
-  const home = process.env.DSH_HOME || path.join(os.homedir(), ".dsh");
-  return path.join(home, "profiles", "headless", "pnpm-workspace.yaml");
+  return dshHomePath("profiles", "headless", "pnpm-workspace.yaml");
+}
+
+/** 原子写 pnpm-workspace.yaml（tmp+rename）。 */
+function writeWorkspaceFile(file: string, content: string): void {
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, content, "utf8");
+  fs.renameSync(tmp, file);
 }
 
 /** 把包名加入 pnpm-workspace.yaml 的 onlyBuiltDependencies（git 插件 build 许可）。 */
@@ -318,13 +337,13 @@ export function allowBuildScripts(pkgName: string, file = pnpmWorkspacePath()): 
         }
         const item = "  - '" + pkgName.replace(/'/g, "''") + "'";
         lines.splice(listEnd, 0, item);
-        fs.writeFileSync(file, lines.join("\n"), "utf8");
+        writeWorkspaceFile(file, lines.join("\n"));
         return true;
       }
     }
     raw = raw.trimEnd() + "\n\nonlyBuiltDependencies:\n";
     raw = raw.trimEnd() + "\n  - '" + pkgName.replace(/'/g, "''") + "'\n";
-    fs.writeFileSync(file, raw, "utf8");
+    writeWorkspaceFile(file, raw);
     return true;
   } catch {
     return false;
@@ -350,17 +369,26 @@ export function runPluginCommand(
       cli.kind === "entry"
         ? ["--expose-internals", cli.entry, "plugin", "--profile", "headless", action, packageName]
         : ["plugin", "--profile", "headless", action, packageName];
-    const child = spawn(cli.kind === "entry" ? cli.node : cli.command, args, {
+    const child = spawnCliChild(cli, args, {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
+    let graceTimer: NodeJS.Timeout | undefined;
     const timer = setTimeout(() => {
       // 超时：置 settled 防止 kill 后 close/end 事件到达时 finish() 重新跑完整逻辑
       // （否则 stdout 若命中 build-allow 正则，会再 spawn 一次后台安装且结果被丢弃）
       settled = true;
+      clearTimeout(timer);
       child.kill();
+      graceTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // 已退出则忽略
+        }
+      }, 3000);
       resolve({ ok: false, message: `plugin command timed out (${packageName})` });
     }, 180000);
     // 等输出流 end + 进程 close 全部就绪再处理：0.9.5 只等 end 导致 close（写入
@@ -433,14 +461,14 @@ export function runPluginCommand(
     };
     let codeRef: number | null = null;
     child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
+      stdout = appendPluginOutput(stdout, chunk.toString("utf8"), 2 * 1024 * 1024);
     });
     child.stdout.on("end", () => {
       outDone = true;
       finish();
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
+      stderr = appendPluginOutput(stderr, chunk.toString("utf8"), 2 * 1024 * 1024);
     });
     child.stderr.on("end", () => {
       errDone = true;
@@ -448,6 +476,7 @@ export function runPluginCommand(
     });
     child.on("error", (err) => {
       clearTimeout(timer);
+      if (graceTimer) clearTimeout(graceTimer);
       settled = true;
       resolve({ ok: false, message: `spawn failed: ${err.message}` });
     });
@@ -457,4 +486,12 @@ export function runPluginCommand(
       finish();
     });
   });
+}
+
+/** 限制插件子进程输出缓冲，防止 npm/pnpm 刷屏导致宿主内存膨胀。 */
+function appendPluginOutput(current: string, chunk: string, max: number): string {
+  if (current.length >= max) return current;
+  const next = current + chunk;
+  if (next.length <= max) return next;
+  return next.slice(0, max) + "\n…(output truncated)";
 }

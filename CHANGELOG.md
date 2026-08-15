@@ -1,5 +1,28 @@
 # Changelog
 
+## 下一版（未发布）
+
+### Fixed（整体韧性加固）
+
+- **任务未生成会话日志时不再卡 30 秒**：`SessionTracer.waitForLogFile` 现在尊重 `finish()`，dsh 快速失败（如未配 API Key）时聊天面板立即返回错误。
+- **运行中切换/新建会话不再污染新会话**：任务文本、目录、模型选择、上下文全部在首个 await 前做快照；结果只落回发起时的会话，旧任务进度不再推到新会话 UI。
+- **官方核心 bundle 不再出现在插件中心可卸载列表**：`@deepseek-ai/dsh-base` / `dsh-headless` 从已装列表过滤，卸载入口加了第二道防线。
+- **`.cmd`/`.bat`/`.ps1` shim 不再导致 spawn EINVAL**：自动解析同目录 `lib/bin.js` 入口；解析不到时给出明确配置指引而不是静默失败。
+- **GitHub 安装后的包名反查修复**：`git+https://github.com/owner/repo.git` 与 pnpm 落盘的 `github:owner/repo` 双向归一化匹配，激活状态/兼容性检测/哨兵记录不再张冠李戴。
+- **Windows 命令行 32k 限制**：任务文本超长时扩展侧截断并标记，避免 spawn EINVAL。
+- **插件哨兵并发去重**：防重入改为类级（static），多个触发点不再重复 dump/重复通知；手动检测与安装后的 `markChecked` 现在等待完成。
+- **DSH_HOME 全局一致**：新增 `dshHome` 模块，`settings.yaml`、credentials、headless profile、pnpm-workspace、skills 路径全部与子进程注入的 `DSH_HOME` 保持一致。
+- **模型补丁 YAML 转义**：provider/model 值经 `yamlScalar` 转义，含 `:` / `#` / 引号 / 换行的手动模型名不再生成非法 YAML。
+- **Webview 忙状态协议**：`/compact` 等后台任务期间禁用发送与会话切换；宿主拒绝输入时会回显原因并恢复草稿，不再静默吞消息。
+- **工作区边界加固**：打开/写入文件用 `realpath` 复核，拒绝 `..` 越界与区外符号链接逃逸；`openExternal` 仅允许 http/https。
+- **输出缓冲上限**：dsh 任务 / pnpm 插件命令 / dump-config 的输出都设了上限并标记截断，异常刷屏不再撑爆扩展宿主。
+- **原子写补齐**：`settings.yaml` 提供商写入、模型选择状态与补丁、`pnpm-workspace.yaml`、secret-index、项目记忆追加全部 tmp + rename。
+- **超时/取消加固**：`runDsh` 补了 abort 注册窗口竞态与超时宽限期；`runCliVersion`/插件命令超时不再重复 settle。
+- **settings.yaml 行编辑边界**：providers 段内缩进 0 的合法注释不再导致漏判/重复写入。
+- **预设 flow 风格防护**：`cordis.patch.yml` 为 flow 集合时拒绝混入块式条目，避免写坏文件。
+- **i18n 长尾补齐**：applyCode / openFile / 插件中心错误 / 会话列表 / statusLine / getTranscript 等剩余中文硬编码全部双语化；`historyMessages` 最小值改为 0（与描述一致）。
+- **杂项**：面板关闭后命令不再持有陈旧引用；自检防并发；激活定时器随 dispose 清理；tracer 增量读取（不再 O(n²)）且 UTF-8 跨追加边界不损坏；MISSING_CREDENTIAL 两流合并判断。
+
 ## 0.9.8 (2026-08-15)
 
 ### Fixed (deep review round — 3 parallel code audits)

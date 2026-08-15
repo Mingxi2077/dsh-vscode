@@ -22,10 +22,14 @@ export function insertCodeToEditor(code: string): void {
     void vscode.window.showWarningMessage(t("没有打开的编辑器可插入代码。", "No open editor to insert code into."));
     return;
   }
-  editor.edit((editBuilder) => {
-    const pos = editor.selection.active;
-    editBuilder.insert(pos, code.endsWith("\n") ? code : code + "\n");
-  });
+  void editor
+    .edit((editBuilder) => {
+      const pos = editor.selection.active;
+      editBuilder.insert(pos, code.endsWith("\n") ? code : code + "\n");
+    })
+    .then(undefined, () => {
+      void vscode.window.showWarningMessage(t("插入代码失败（编辑器可能已被关闭）。", "Failed to insert code (the editor may have been closed)."));
+    });
 }
 
 /** 把当前编辑器选中内容作为上下文块回调出去。 */

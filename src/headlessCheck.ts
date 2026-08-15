@@ -1,5 +1,4 @@
-import { spawn } from "child_process";
-import { ResolvedCli } from "./cli";
+import { ResolvedCli, spawnCliChild } from "./cli";
 
 /**
  * headless 兼容性检测：通过 `dsh --profile headless --dump-config` 的运行时输出，
@@ -59,7 +58,7 @@ export function runDumpConfig(cli: ResolvedCli): Promise<{ stdout: string; stder
       cli.kind === "entry"
         ? ["--expose-internals", cli.entry, "--profile", "headless", "--dump-config"]
         : ["--profile", "headless", "--dump-config"];
-    const child = spawn(cli.kind === "entry" ? cli.node : cli.command, args, {
+    const child = spawnCliChild(cli, args, {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -94,12 +93,12 @@ export function runDumpConfig(cli: ResolvedCli): Promise<{ stdout: string; stder
       clearTimeout(timer);
       resolve({ stdout, stderr, exitCode, timedOut });
     };
-    child.stdout.on("data", (c: Buffer) => (stdout += c.toString("utf8")));
+    child.stdout.on("data", (c: Buffer) => (stdout = appendDumpOutput(stdout, c.toString("utf8"), 4 * 1024 * 1024)));
     child.stdout.on("end", () => {
       outDone = true;
       finish();
     });
-    child.stderr.on("data", (c: Buffer) => (stderr += c.toString("utf8")));
+    child.stderr.on("data", (c: Buffer) => (stderr = appendDumpOutput(stderr, c.toString("utf8"), 256 * 1024)));
     child.stderr.on("end", () => {
       errDone = true;
       finish();
@@ -115,6 +114,14 @@ export function runDumpConfig(cli: ResolvedCli): Promise<{ stdout: string; stder
       finish();
     });
   });
+}
+
+/** 限制 dump-config 输出缓冲。 */
+function appendDumpOutput(current: string, chunk: string, max: number): string {
+  if (current.length >= max) return current;
+  const next = current + chunk;
+  if (next.length <= max) return next;
+  return next.slice(0, max) + "\n…(dump-config output truncated)";
 }
 
 /** 从 dump-config 输出中解析某个包名的加载情况。导出便于测试。 */

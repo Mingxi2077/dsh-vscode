@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import * as os from "os";
 import { execFile } from "child_process";
 import { ChatPanel, StatusBar } from "./chatPanel";
 import { resolveCli, ResolvedCli, runCliVersion, buildSpawnArgs, runDsh } from "./cli";
@@ -15,6 +14,7 @@ import { openPluginCenter, pluginStatusSummary } from "./pluginCenter";
 import { openPresetCenter, presetStatusSummary } from "./presetCenter";
 import { PluginWatch } from "./pluginWatch";
 import { t, tf, setUiLanguage } from "./i18n";
+import { setDshHome, dshHome, dshHomePath } from "./dshHome";
 
 /** 检查 llm-pi-ai.providers 配置的可服务性（返回多行说明）。 */
 function checkProviderConfig(): string[] {
@@ -34,7 +34,14 @@ function checkProviderConfig(): string[] {
 function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEnv> {
   return async () => {
     const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-    const extraEnv = cfg.get<Record<string, string>>("environment", {});
+    // settings.json 里可能显式写 null/数字等类型，先归一化成 Record<string,string>
+    const rawEnv = cfg.get<Record<string, string>>("environment", {});
+    const extraEnv: Record<string, string> = {};
+    if (rawEnv && typeof rawEnv === "object") {
+      for (const [k, v] of Object.entries(rawEnv)) {
+        if (v !== null && v !== undefined) extraEnv[k] = String(v);
+      }
+    }
     const permissionMode = cfg.get<string>("permissionMode", "workspace-write");
     const env: NodeJS.ProcessEnv = { ...process.env };
     // 注入所有用户通过扩展保存的 API Key（环境里已有的以环境为准）
@@ -42,12 +49,19 @@ function createEnvProvider(secrets: SecretStore): () => Promise<NodeJS.ProcessEn
     for (const [name, value] of Object.entries(stored)) {
       if (!env[name]) env[name] = value;
     }
+    // 相对 DSH_HOME 按工作区根解析，保证子进程与扩展侧（settings/profile 写入）看到同一个目录
+    if (extraEnv.DSH_HOME && !path.isAbsolute(extraEnv.DSH_HOME)) {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (root) extraEnv.DSH_HOME = path.resolve(root, extraEnv.DSH_HOME);
+    }
     // 用户显式配置的 environment 优先级最高
     const final: NodeJS.ProcessEnv = { ...env, ...extraEnv };
     // 沙箱权限模式：默认 workspace-write；用户若在 environment 里显式给了 DSH_PERMISSION_MODE 则以它为准
     if (!extraEnv.DSH_PERMISSION_MODE) {
       final.DSH_PERMISSION_MODE = permissionMode;
     }
+    // 同步扩展侧的 DSH_HOME（settings.yaml / profile 路径写入必须与子进程一致）
+    setDshHome(extraEnv.DSH_HOME);
     return final;
   };
 }
@@ -57,10 +71,11 @@ async function apiKeyStatus(secrets: SecretStore): Promise<string> {
   const secret = await secrets.get("DEEPSEEK_API_KEY");
   if (secret) return t("已配置（系统密钥链）", "configured (system keychain)");
   if (process.env.DEEPSEEK_API_KEY) return t("已配置（环境变量 DEEPSEEK_API_KEY）", "configured (env DEEPSEEK_API_KEY)");
-  const credFile = path.join(os.homedir(), ".dsh", ".credentials.yaml");
+  // 与子进程的 DSH_HOME 保持一致：用户配置了自定义 DSH_HOME 时凭据也在那里
+  const credFile = dshHomePath(".credentials.yaml");
   try {
     const raw = fs.readFileSync(credFile, "utf8");
-    if (/DEEPSEEK_API_KEY\s*:/.test(raw)) return t("已配置（~/.dsh/.credentials.yaml）", "configured (~/.dsh/.credentials.yaml)");
+    if (/DEEPSEEK_API_KEY\s*:/.test(raw)) return t("已配置（{0}）", "configured ({0})").replace("{0}", credFile);
   } catch {
     // 文件不存在或不可读，按未配置处理
   }
@@ -112,7 +127,13 @@ function createCliProvider(): () => Promise<ResolvedCli> {
   const provider = async (): Promise<ResolvedCli> => {
     if (!cache) {
       const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-      cache = resolveCli(cfg.get<string>("cliPath", "")).catch((err) => {
+      let cliPath = cfg.get<string>("cliPath", "");
+      // 相对路径按第一个工作区目录解析（与用户直觉一致；无工作区时保持原样由 resolveCli 报错）
+      if (cliPath && !path.isAbsolute(cliPath)) {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (root) cliPath = path.resolve(root, cliPath);
+      }
+      cache = resolveCli(cliPath).catch((err) => {
         cache = undefined;
         throw err;
       });
@@ -219,7 +240,28 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   const cliProvider = createCliProvider();
   const envProvider = createEnvProvider(secrets);
-  let panel: ChatPanel | undefined;
+  // 启动时同步一次 DSH_HOME；envProvider 每次构建子进程环境时也会再同步
+  setDshHome(
+    vscode.workspace.getConfiguration("dsh-harness-vscode").get<Record<string, string>>("environment", {})?.DSH_HOME
+  );
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("dsh-harness-vscode.environment")) {
+        setDshHome(
+          vscode.workspace.getConfiguration("dsh-harness-vscode").get<Record<string, string>>("environment", {})?.DSH_HOME
+        );
+      }
+    })
+  );
+  let selfTestRunning = false;
+  /** 复用现有面板；没有则选目录后打开。所有命令统一走 ChatPanel.current()，避免闭包持有已 dispose 的旧实例。 */
+  const ensureChatPanel = async (): Promise<ChatPanel | undefined> => {
+    const existing = ChatPanel.current();
+    if (existing) return existing;
+    const folder = await pickFolder();
+    if (!folder) return undefined;
+    return ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
+  };
 
   // 插件"哨兵"：发现 profile 里未检测过的新插件（无论谁安装）自动补兼容性检测
   const pluginWatch = new PluginWatch(context);
@@ -231,14 +273,16 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(registerSidebarView(context));
 
   context.subscriptions.push(
-    // 插件中心：浏览已装插件（只读视图）；打开前先补一次新插件检测
-    vscode.commands.registerCommand("dsh-harness-vscode.pluginCenter", async () => {
-      try {
-        await pluginWatch.checkOnce(await cliProvider());
-      } catch {
-        // 检测失败不阻塞插件中心
-      }
+    // 插件中心：浏览已装插件；先打开中心，哨兵检测在后台补跑（避免多个新插件串行 dump 阻塞 UI）
+    vscode.commands.registerCommand("dsh-harness-vscode.pluginCenter", () => {
       void openPluginCenter(cliProvider, context);
+      void (async () => {
+        try {
+          await pluginWatch.checkOnce(await cliProvider());
+        } catch {
+          // 检测失败不阻塞插件中心
+        }
+      })();
     }),
 
     // 模式预设：启用/停用 DSH 原生行为预设
@@ -249,7 +293,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("dsh-harness-vscode.openChat", async () => {
       const folder = await pickFolder();
       if (!folder) return;
-      panel = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
+      ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
       status.setReady(true, "DSH: " + t("打开对话面板", "Open Chat panel"));
     }),
 
@@ -343,64 +387,73 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // 兼容性自检：跑一次 tiny 任务，验证流式补丁（明文会话日志）与模型补丁机制
     vscode.commands.registerCommand("dsh-harness-vscode.selfTest", async () => {
-      const folder = await pickFolder();
-      if (!folder) return;
-      output.clear();
-      output.appendLine(t("DSH 兼容性自检", "DSH Compatibility Self-Test"));
-      output.appendLine("================");
-      void vscode.window.showInformationMessage(t("DSH 兼容性自检进行中…（约 10-20 秒）", "DSH compatibility self-test running… (10-20s)"));
+      if (selfTestRunning) {
+        void vscode.window.showInformationMessage(t("自检已在运行中，请稍候。", "A self-test is already running; please wait."));
+        return;
+      }
+      selfTestRunning = true;
       try {
-        const cli = await cliProvider();
-        const env = await envProvider();
-        const streamPatch = path.join(context.extensionPath, "patch", "stream.patch.yml");
-        const sessionsDir = path.join(env.DSH_HOME || path.join(os.homedir(), ".dsh"), "sessions-vscode");
-        const before = new Set(walkFiles(sessionsDir).filter((f) => f.endsWith("session.jsonl")));
+        const folder = await pickFolder();
+        if (!folder) return;
+        output.clear();
+        output.appendLine(t("DSH 兼容性自检", "DSH Compatibility Self-Test"));
+        output.appendLine("================");
+        void vscode.window.showInformationMessage(t("DSH 兼容性自检进行中…（约 10-20 秒）", "DSH compatibility self-test running… (10-20s)"));
+        try {
+          const cli = await cliProvider();
+          const env = await envProvider();
+          const streamPatch = path.join(context.extensionPath, "patch", "stream.patch.yml");
+          const sessionsDir = path.join(env.DSH_HOME || dshHome(), "sessions-vscode");
+          const before = new Set(walkFiles(sessionsDir).filter((f) => f.endsWith("session.jsonl")));
 
-        const extraArgs = ["--patch", streamPatch];
-        const sel = panel ? panel.selection : undefined;
-        const modelPatch = sel ? writeModelPatch(context.globalStorageUri.fsPath, stableHash(folder.uri.fsPath), sel) : undefined;
-        if (modelPatch) extraArgs.push("--patch", modelPatch);
+          const extraArgs = ["--patch", streamPatch];
+          const sel = ChatPanel.current()?.selection;
+          const modelPatch = sel ? writeModelPatch(context.globalStorageUri.fsPath, stableHash(folder.uri.fsPath), sel) : undefined;
+          if (modelPatch) extraArgs.push("--patch", modelPatch);
 
-        const args = buildSpawnArgs(cli, extraArgs, t("请只回复两个字：好的", "Please reply with just: OK"));
-        const result = await runDsh(cli, args, {
-          cwd: folder.uri.fsPath,
-          timeoutMs: 90000,
-          env,
-        });
+          const args = buildSpawnArgs(cli, extraArgs, t("请只回复两个字：好的", "Please reply with just: OK"));
+          const result = await runDsh(cli, args, {
+            cwd: folder.uri.fsPath,
+            timeoutMs: 90000,
+            env,
+          });
 
-        const after = walkFiles(sessionsDir);
-        const newLog = after.find((f) => f.endsWith("session.jsonl") && !before.has(f));
+          const after = walkFiles(sessionsDir);
+          const newLog = after.find((f) => f.endsWith("session.jsonl") && !before.has(f));
 
-        output.appendLine(t("任务执行: {0}", "task run: {0}").replace("{0}", result.code === 0 ? "✓ exit 0" : `✗ exit ${result.code}`));
-        if (result.stderr.trim()) output.appendLine(`  stderr: ${result.stderr.trim().slice(0, 300)}`);
-        output.appendLine(t("流式补丁（明文会话日志）: {0}", "streaming patch (plain session log): {0}").replace("{0}", newLog ? t("✓ 已生成", "✓ generated") : t("✗ 未生成（流式将不可用）", "✗ not generated (streaming unavailable)")));
-        if (newLog) output.appendLine(t("  日志: {0}", "  log: {0}").replace("{0}", newLog));
-        if (sel) output.appendLine(t("模型补丁: 已随任务传入（{0}/{1}），若任务成功即生效", "model patch: passed with task ({0}/{1}), effective if task succeeds").replace("{0}", sel.provider).replace("{1}", sel.model));
-        output.appendLine("");
-        output.appendLine(
-          result.code === 0 && newLog
-            ? t("自检通过：流式与模型机制正常。", "Self-test passed: streaming & model mechanisms OK.")
-            : t("自检发现问题，请把以上输出反馈给维护者。", "Self-test found issues; please share the output above with the maintainer.")
-        );
-        output.show(true);
-        if (result.code === 0 && newLog) {
-          status.setReady(true, t("DSH 兼容性自检通过", "DSH compatibility self-test passed"));
-          void vscode.window.showInformationMessage(t("DSH 兼容性自检通过。", "DSH compatibility self-test passed."));
-        } else {
-          status.setReady(false, t("DSH: 兼容性自检失败，查看输出面板 DSH", "DSH: self-test failed, see DSH output panel"));
-          void vscode.window.showErrorMessage(t("DSH 兼容性自检失败，请查看输出面板（DSH）。", "DSH compatibility self-test failed — see the DSH output panel."));
+          output.appendLine(t("任务执行: {0}", "task run: {0}").replace("{0}", result.code === 0 ? "✓ exit 0" : `✗ exit ${result.code}`));
+          if (result.stderr.trim()) output.appendLine(`  stderr: ${result.stderr.trim().slice(0, 300)}`);
+          output.appendLine(t("流式补丁（明文会话日志）: {0}", "streaming patch (plain session log): {0}").replace("{0}", newLog ? t("✓ 已生成", "✓ generated") : t("✗ 未生成（流式将不可用）", "✗ not generated (streaming unavailable)")));
+          if (newLog) output.appendLine(t("  日志: {0}", "  log: {0}").replace("{0}", newLog));
+          if (sel) output.appendLine(t("模型补丁: 已随任务传入（{0}/{1}），若任务成功即生效", "model patch: passed with task ({0}/{1}), effective if task succeeds").replace("{0}", sel.provider).replace("{1}", sel.model));
+          output.appendLine("");
+          output.appendLine(
+            result.code === 0 && newLog
+              ? t("自检通过：流式与模型机制正常。", "Self-test passed: streaming & model mechanisms OK.")
+              : t("自检发现问题，请把以上输出反馈给维护者。", "Self-test found issues; please share the output above with the maintainer.")
+          );
+          output.show(true);
+          if (result.code === 0 && newLog) {
+            status.setReady(true, t("DSH 兼容性自检通过", "DSH compatibility self-test passed"));
+            void vscode.window.showInformationMessage(t("DSH 兼容性自检通过。", "DSH compatibility self-test passed."));
+          } else {
+            status.setReady(false, t("DSH: 兼容性自检失败，查看输出面板 DSH", "DSH: self-test failed, see DSH output panel"));
+            void vscode.window.showErrorMessage(t("DSH 兼容性自检失败，请查看输出面板（DSH）。", "DSH compatibility self-test failed — see the DSH output panel."));
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          output.appendLine(t("自检异常: {0}", "self-test error: {0}").replace("{0}", message));
+          output.show(true);
+          status.setReady(false, t("DSH: 自检异常", "DSH: self-test error"));
+          void vscode.window.showErrorMessage(t("DSH 兼容性自检异常：{0}", "DSH compatibility self-test error: {0}").replace("{0}", message));
         }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        output.appendLine(t("自检异常: {0}", "self-test error: {0}").replace("{0}", message));
-        output.show(true);
-        status.setReady(false, t("DSH: 自检异常", "DSH: self-test error"));
-        void vscode.window.showErrorMessage(t("DSH 兼容性自检异常：{0}", "DSH compatibility self-test error: {0}").replace("{0}", message));
+      } finally {
+        selfTestRunning = false;
       }
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.newSession", async () => {
-      const current = panel ?? ChatPanel.current();
+      const current = ChatPanel.current();
       if (!current) {
         await vscode.commands.executeCommand("dsh-harness-vscode.openChat");
         return;
@@ -409,37 +462,23 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.cancelRun", () => {
-      const current = panel ?? ChatPanel.current();
-      current?.cancel();
+      ChatPanel.current()?.cancel();
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.addSelection", async () => {
-      let current = panel ?? ChatPanel.current();
-      if (!current) {
-        const folder = await pickFolder();
-        if (!folder) return;
-        current = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-        panel = current;
-      }
-      current.attachSelection();
+      const current = await ensureChatPanel();
+      current?.attachSelection();
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.addOpenFile", async () => {
-      let current = panel ?? ChatPanel.current();
-      if (!current) {
-        const folder = await pickFolder();
-        if (!folder) return;
-        current = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-        panel = current;
-      }
-      current.attachOpenFile();
+      const current = await ensureChatPanel();
+      current?.attachOpenFile();
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.askAboutFile", async (uri?: vscode.Uri) => {
       const folder = await pickFolder();
       if (!folder) return;
       const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-      panel = chat;
 
       const target = uri ?? vscode.window.activeTextEditor?.document.uri;
       if (!target) return;
@@ -472,7 +511,6 @@ export function activate(context: vscode.ExtensionContext): void {
       const folder = await pickFolder();
       if (!folder) return;
       const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-      panel = chat;
       const diff = await gitDiffSummary(folder.uri.fsPath);
       if (diff) {
         chat.addContextBlock({ kind: "file", label: t("git diff（当前改动）", "git diff (current changes)"), content: diff });
@@ -513,7 +551,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.editMemory", async () => {
-      const current = panel ?? ChatPanel.current();
+      const current = ChatPanel.current();
       if (current) {
         await current.editMemory();
         return;
@@ -521,12 +559,11 @@ export function activate(context: vscode.ExtensionContext): void {
       const folder = await pickFolder();
       if (!folder) return;
       const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-      panel = chat;
       await chat.editMemory();
     }),
 
     vscode.commands.registerCommand("dsh-harness-vscode.showMemory", async () => {
-      const current = panel ?? ChatPanel.current();
+      const current = ChatPanel.current();
       if (current) {
         current.showMemory();
         return;
@@ -534,17 +571,17 @@ export function activate(context: vscode.ExtensionContext): void {
       const folder = await pickFolder();
       if (!folder) return;
       const chat = ChatPanel.open(context, folder, cliProvider, envProvider, secrets, status, log);
-      panel = chat;
       chat.showMemory();
     })
   );
 
   // 启动后延迟检测一次新插件（不阻塞激活；无新插件时完全静默）
-  setTimeout(() => {
+  const sentinelTimer = setTimeout(() => {
     void cliProvider()
       .then((cli) => pluginWatch.checkOnce(cli))
       .catch(() => {});
   }, 5000);
+  context.subscriptions.push({ dispose: () => clearTimeout(sentinelTimer) });
 }
 
 export function deactivate(): void {

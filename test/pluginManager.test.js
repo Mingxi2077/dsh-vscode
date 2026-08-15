@@ -141,6 +141,44 @@ test("resolveInstalledName：依赖 spec 反查真实包名", () => {
   }
 });
 
+test("resolveInstalledName：pnpm 落盘 github:owner/repo 时，git+https 输入也能反查真实包名", () => {
+  const { resolveInstalledName } = require("../out/pluginManager.js");
+  const fs = require("node:fs");
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-plugin-"));
+  try {
+    const dir = path.join(root, "profiles", "headless");
+    fs.mkdirSync(dir, { recursive: true });
+    const pkg = {
+      name: "dsh-profile-headless-test",
+      private: true,
+      dependencies: {
+        "@dsh-external/dsh-artifact": "github:dsh-external/dsh-artifact",
+      },
+    };
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify(pkg, null, 2), "utf8");
+    const orig = process.env.DSH_HOME;
+    process.env.DSH_HOME = root;
+    try {
+      // 扩展安装时传的 git+https 形式，必须能反查到 pnpm 落盘的 github: 形式
+      assert.equal(
+        resolveInstalledName("git+https://github.com/dsh-external/dsh-artifact.git"),
+        "@dsh-external/dsh-artifact"
+      );
+      assert.equal(
+        resolveInstalledName("github:dsh-external/dsh-artifact"),
+        "@dsh-external/dsh-artifact"
+      );
+      // 其它 owner/repo 不得因子串误命中
+      assert.equal(resolveInstalledName("git+https://github.com/dsh-external/other.git"), "git+https://github.com/dsh-external/other.git");
+    } finally {
+      if (orig === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = orig;
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("installSourceKind：识别各种安装来源", () => {
   assert.equal(installSourceKind("dsh-plugin-doctor"), "npm");
   assert.equal(installSourceKind("@scope/pkg"), "npm");

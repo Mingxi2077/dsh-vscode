@@ -22,6 +22,7 @@ import {
   providerDisplayName,
 } from "./modelSelection";
 import { refreshSidebarStatus } from "./sidebar";
+import { resolveExistingInsideRoot } from "./pathSafety";
 import { t, tf, isZh } from "./i18n";
 
 /** 用户在输入区上方挂载的上下文块（选中代码 / 文件片段）。 */
@@ -102,6 +103,7 @@ export class ChatPanel {
   private running = false;
   private busy = false;
   private abort: AbortController | undefined;
+  private disposed = false;
   private readonly disposables: vscode.Disposable[] = [];
 
   private constructor(
@@ -208,7 +210,21 @@ export class ChatPanel {
     };
   }
 
+  /** 后台任务（/compact）进行中时禁止切换会话，防止压缩结果套到新会话上。 */
+  private sessionSwitchBlocked(): boolean {
+    if (!this.busy) return false;
+    this.post({
+      type: "appendMessage",
+      message: this.systemMessage(
+        t("后台任务（如 /compact）进行中，请稍候再切换会话。", "A background task (e.g. /compact) is running; please wait before switching sessions.")
+      ),
+    });
+    return true;
+  }
+
   private switchFolder(folder: vscode.WorkspaceFolder): void {
+    if (this.running) this.cancel();
+    if (this.sessionSwitchBlocked()) return;
     this.folder = folder;
     this.folderHash = stableHash(folder.uri.fsPath);
     this.store = new SessionStore(this.globalStorageDir, folder.uri.fsPath);
@@ -216,14 +232,17 @@ export class ChatPanel {
     this.selection = loadSelection(this.globalStorageDir, this.folderHash);
     this.enabledSkills = [];
     this.contextBlocks = [];
+    this.lastUsage = undefined;
     this.session = this.createFreshSession();
     this.post({ type: "sessionChanged", sessionId: this.session.id, title: this.session.title });
     this.post({ type: "contextChanged", blocks: [] });
+    this.post({ type: "selectionChanged", selection: this.selection, effort: this.effectiveEffort() });
     this.post({ type: "resetMessages" });
   }
 
   newSession(): void {
     if (this.running) this.cancel();
+    if (this.sessionSwitchBlocked()) return;
     this.session = this.createFreshSession();
     this.contextBlocks = [];
     this.post({ type: "sessionChanged", sessionId: this.session.id, title: this.session.title });
@@ -238,6 +257,7 @@ export class ChatPanel {
       return;
     }
     if (this.running) this.cancel();
+    if (this.sessionSwitchBlocked()) return;
     this.session = loaded;
     this.contextBlocks = [];
     this.post({ type: "sessionChanged", sessionId: this.session.id, title: this.session.title });
@@ -256,7 +276,7 @@ export class ChatPanel {
     const pick = await vscode.window.showQuickPick(
       summaries.map((s) => ({
         label: s.title,
-        description: `${s.messageCount} 条消息`,
+        description: tf(t("{0} 条消息", "{0} messages"), s.messageCount),
         detail: new Date(s.updatedAt).toLocaleString(),
         id: s.id,
       })),
@@ -268,9 +288,19 @@ export class ChatPanel {
   // ---------------------------------------------------------------- 消息收发
 
   post(message: unknown): void {
-    if (this.panelVisible()) {
-      void this.panel.webview.postMessage(message);
+    if (this.disposed || !this.panelVisible()) return;
+    try {
+      this.panel.webview.postMessage(message).then(undefined, () => {
+        // 面板可能恰在 postMessage 前被关闭；消息丢失可接受，不能让宿主出现未处理拒绝
+      });
+    } catch {
+      // 防御面板已 dispose 时 postMessage 同步抛错
     }
+  }
+
+  /** 仅当面板仍停留在发起任务的那个会话时才向 webview 推送（防旧任务污染新会话 UI）。 */
+  private postIfCurrent(session: ChatSession, message: unknown): void {
+    if (this.session === session) this.post(message);
   }
 
   private async handleMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
@@ -278,7 +308,7 @@ export class ChatPanel {
       await this.dispatchMessage(msg);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.post({ type: "appendMessage", message: this.systemMessage(`操作出错：${message}`) });
+      this.post({ type: "appendMessage", message: this.systemMessage(tf(t("操作出错：{0}", "Operation failed: {0}"), message)) });
     }
   }
 
@@ -314,11 +344,15 @@ export class ChatPanel {
         const p = typeof msg.path === "string" ? msg.path : "";
         if (!p) break;
         const raw = path.isAbsolute(p) ? p : path.join(this.folder.uri.fsPath, p);
-        const abs = path.resolve(raw);
-        const root = path.resolve(this.folder.uri.fsPath);
-        // 安全：只允许打开工作区内的文件，防止回答里的 ../ 越界
-        if (abs !== root && !abs.startsWith(root + path.sep)) {
-          void vscode.window.showWarningMessage(`出于安全，拒绝打开工作区外的文件：${p}`);
+        // 安全：只允许打开工作区内的文件；用 realpath 复核，防 ../ 越界与区外符号链接
+        const safe = resolveExistingInsideRoot(this.folder.uri.fsPath, raw);
+        if (!safe.ok || !safe.realPath) {
+          void vscode.window.showWarningMessage(
+            t(
+              `无法打开 {0}：文件不存在、位于工作区外，或经符号链接指向区外。`,
+              `Cannot open {0}: it is missing, outside the workspace, or linked out of the workspace.`
+            ).replace("{0}", p)
+          );
           break;
         }
         const line = typeof msg.line === "number" ? msg.line : undefined;
@@ -329,8 +363,8 @@ export class ChatPanel {
             : {}),
         };
         void vscode.window
-          .showTextDocument(vscode.Uri.file(abs), opts)
-          .then(undefined, () => void vscode.window.showWarningMessage(`无法打开文件：${p}`));
+          .showTextDocument(vscode.Uri.file(safe.realPath), opts)
+          .then(undefined, () => void vscode.window.showWarningMessage(tf(t("无法打开文件：{0}", "Cannot open file: {0}"), p)));
         break;
       }
       case "insertCode": {
@@ -353,7 +387,11 @@ export class ChatPanel {
       case "openExternal": {
         if (typeof msg.url === "string") {
           try {
-            void vscode.env.openExternal(vscode.Uri.parse(msg.url));
+            const uri = vscode.Uri.parse(msg.url);
+            // 仅允许 http/https：模型内容/被篡改的 webview 不能诱导打开 file:// 或其它协议
+            if (uri.scheme === "http" || uri.scheme === "https") {
+              void vscode.env.openExternal(uri);
+            }
           } catch {
             // 非法 URL 直接忽略
           }
@@ -371,6 +409,7 @@ export class ChatPanel {
       messages: this.session.messages,
       blocks: this.contextBlocks,
       running: this.running,
+      busy: this.busy,
       folder: this.folder.uri.fsPath,
       selection: this.selection,
       effort: this.effectiveEffort(),
@@ -395,25 +434,43 @@ export class ChatPanel {
 
   private async sendMessage(text: string): Promise<void> {
     const trimmed = text.trim();
-    if (!trimmed || this.running || this.busy) return;
+    if (!trimmed) return;
+    if (this.running || this.busy) {
+      // 韧性：不能让用户输入被静默吞掉——回显原因并恢复草稿
+      this.post({
+        type: "appendMessage",
+        message: this.systemMessage(
+          this.running
+            ? t("已有任务运行中，请等待完成或先取消。", "A task is already running; wait for it or cancel it first.")
+            : t("后台任务（如 /compact）进行中，请稍候再发送。", "A background task (e.g. /compact) is running; please wait before sending.")
+        ),
+      });
+      this.post({ type: "setDraft", text });
+      return;
+    }
+
+    // 任务会话快照：运行中即使切换目录/新建会话，结果也只落回发起时的会话，
+    // 不会污染新会话（0.9.8 已修取消竞态，这里补齐“结果归属”竞态）。
+    const taskSession = this.session;
+    const taskStore = this.store;
 
     const userMsg: ChatMessage = { id: UUID(), role: "user", content: trimmed, ts: Date.now() };
-    this.session.messages.push(userMsg);
+    taskSession.messages.push(userMsg);
     this.updateTitleFromSession();
-    this.store.save(this.session);
-    this.post({ type: "appendMessage", message: userMsg });
+    taskStore.save(taskSession);
+    this.postIfCurrent(taskSession, { type: "appendMessage", message: userMsg });
 
     this.running = true;
     this.abort = new AbortController();
-    this.post({ type: "running", running: true });
-    this.post({ type: "sessionChanged", sessionId: this.session.id, title: this.session.title });
+    this.postIfCurrent(taskSession, { type: "running", running: true });
+    this.postIfCurrent(taskSession, { type: "sessionChanged", sessionId: taskSession.id, title: taskSession.title });
     this.status.setRunning(true);
 
     try {
-      const outcome = await this.executeTask(this.abort);
-      this.session.messages.push(outcome);
-      this.store.save(this.session);
-      this.post({ type: "appendMessage", message: outcome });
+      const outcome = await this.executeTask(this.abort, taskSession);
+      taskSession.messages.push(outcome);
+      taskStore.save(taskSession);
+      this.postIfCurrent(taskSession, { type: "appendMessage", message: outcome });
     } finally {
       // 无论成功失败都复位运行态，避免卡在「运行中」无法再发送
       this.running = false;
@@ -423,8 +480,37 @@ export class ChatPanel {
     }
   }
 
-  /** 执行一次 headless 任务，返回要追加到会话的消息。 */
-  private async executeTask(abort: AbortController): Promise<ChatMessage> {
+  /** 执行一次 headless 任务，返回要追加到发起会话的消息。 */
+  private async executeTask(abort: AbortController, taskSession: ChatSession): Promise<ChatMessage> {
+    // 任务快照必须全部在第一个 await 之前取好：await 期间用户可能 /provider、
+    // 切换目录或新建会话，动态读取 this.* 会把新会话的内容塞进旧任务。
+    let extraArgs: string[];
+    let timeoutSec: number;
+    let streamProgress: boolean;
+    let debugStreaming: boolean;
+    let folderPath: string;
+    let folderHash: string;
+    let selection: ModelSelection | undefined;
+    let enabledSkills: string[];
+    let taskText: string;
+    let modelPatch: string | undefined;
+    try {
+      const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
+      extraArgs = [...(cfg.get<string[]>("extraArgs", []) ?? [])];
+      timeoutSec = cfg.get<number>("timeoutSeconds", 600);
+      streamProgress = cfg.get<boolean>("streamProgress", true);
+      debugStreaming = cfg.get<boolean>("debugStreaming", false);
+      folderPath = this.folder.uri.fsPath;
+      folderHash = this.folderHash;
+      selection = this.selection;
+      enabledSkills = [...this.enabledSkills];
+      taskText = this.buildTaskTextFor(taskSession, this.folder, this.contextBlocks, selection, enabledSkills);
+      modelPatch = selection ? writeModelPatch(this.globalStorageDir, folderHash, selection) : undefined;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return this.systemMessage(tf(t("准备任务失败：{0}", "Failed to prepare the task: {0}"), message));
+    }
+
     let cli: ResolvedCli;
     try {
       cli = await this.cliProvider();
@@ -436,13 +522,6 @@ export class ChatPanel {
     let tracer: SessionTracer | undefined;
     let tracerDone: Promise<void> = Promise.resolve();
     try {
-      const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-      const extraArgs = cfg.get<string[]>("extraArgs", []);
-      const timeoutSec = cfg.get<number>("timeoutSeconds", 600);
-      const streamProgress = cfg.get<boolean>("streamProgress", true);
-
-      const taskText = this.buildTaskText();
-      const modelPatch = this.currentModelPatch();
       if (streamProgress) {
         // 附加流式补丁：明文 JSONL 会话日志 + 更低的落盘批次延迟
         extraArgs.push("--patch", path.join(this.extensionPath, "patch", "stream.patch.yml"));
@@ -517,18 +596,23 @@ export class ChatPanel {
         tracer = new SessionTracer(env, Date.now(), (line) => this.log?.(line));
         tracerDone = tracer.start(
           (msg) => {
+            const current = this.session === taskSession;
             if (msg.kind === "usage") {
-              this.lastUsage = msg;
-              this.post({ type: "usage", ...msg, effort: this.effectiveEffort() });
+              if (current) {
+                this.lastUsage = msg;
+                this.post({ type: "usage", ...msg, effort: this.effectiveEffort() });
+              }
             } else if (msg.kind === "title") {
-              // DSH 生成的会话标题：更新面板标题与会话记录，并同步前端
-              this.session.title = msg.title;
-              this.session.dshTitle = msg.title;
-              this.panel.title = `DSH — ${msg.title}`;
-              this.post({ type: "sessionChanged", sessionId: this.session.id, title: msg.title });
+              // DSH 生成的会话标题：先更新任务会话记录；只有仍是当前会话才改 UI
+              taskSession.title = msg.title;
+              taskSession.dshTitle = msg.title;
+              if (current) {
+                this.panel.title = `DSH — ${msg.title}`;
+                this.post({ type: "sessionChanged", sessionId: taskSession.id, title: msg.title });
+              }
             } else {
               recordTrace(msg);
-              this.post({ type: "progress", msg });
+              this.postIfCurrent(taskSession, { type: "progress", msg });
             }
           },
           abort.signal
@@ -536,7 +620,7 @@ export class ChatPanel {
       }
 
       const result = await runDsh(cli, args, {
-        cwd: this.folder.uri.fsPath,
+        cwd: folderPath,
         timeoutMs: timeoutSec * 1000,
         env,
         signal: abort.signal,
@@ -555,7 +639,8 @@ export class ChatPanel {
       }
       if (result.code !== 0) {
         const detail = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join("\n");
-        if (/MISSING_CREDENTIAL|no API key/i.test(result.stderr)) {
+        // MISSING_CREDENTIAL 可能出现在 stdout 或 stderr，两流合并后判断
+        if (/MISSING_CREDENTIAL|no API key/i.test(detail)) {
           return this.systemMessage(
             t(
               `检测到未配置 API Key。请执行「DSH: 配置 API Key」输入 DeepSeek API Key（sk-...），或在系统环境变量中设置 DEEPSEEK_API_KEY。\n\n原始错误：\n${detail}`,
@@ -569,7 +654,7 @@ export class ChatPanel {
       }
       const answer = result.stdout.trim();
       let content = answer.length > 0 ? answer : t("（dsh 未返回文本输出）", "(dsh returned no text output)");
-      if (tracer && cfg.get<boolean>("debugStreaming", false)) {
+      if (tracer && debugStreaming) {
         const s = tracer.stats();
         content +=
           "\n\n— " +
@@ -653,19 +738,24 @@ export class ChatPanel {
     // 并发守卫：主任务或另一个后台任务运行时不再启动新的 dsh 子进程
     if (this.running || this.busy) return null;
     this.busy = true;
+    this.post({ type: "busy", busy: true });
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), 120000);
+    // busy 期间已阻止会话切换，但仍把目录/选择快照在 await 前取好，防 /provider 并发修改
+    const folderPath = this.folder.uri.fsPath;
+    const folderHash = this.folderHash;
+    const selection = this.selection;
+    const modelPatch = selection ? writeModelPatch(this.globalStorageDir, folderHash, selection) : undefined;
     try {
       const cli = await this.cliProvider();
       const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
-      const extraArgs = cfg.get<string[]>("extraArgs", []);
+      const extraArgs = [...(cfg.get<string[]>("extraArgs", []) ?? [])];
       extraArgs.push("--patch", path.join(this.extensionPath, "patch", "stream.patch.yml"));
-      const modelPatch = this.currentModelPatch();
       if (modelPatch) extraArgs.push("--patch", modelPatch);
       const args = buildSpawnArgs(cli, extraArgs, task);
       const env = await this.envProvider();
       const result = await runDsh(cli, args, {
-        cwd: this.folder.uri.fsPath,
+        cwd: folderPath,
         timeoutMs: 120000,
         env,
         signal: abort.signal,
@@ -680,13 +770,14 @@ export class ChatPanel {
     } finally {
       clearTimeout(timer);
       this.busy = false;
+      this.post({ type: "busy", busy: false });
     }
   }
 
   getTranscript(): string {
     return this.session.messages
       .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => `${m.role === "user" ? "用户" : "助手"}: ${m.content}`)
+      .map((m) => `${m.role === "user" ? t("用户", "User") : t("助手", "Assistant")}: ${m.content}`)
       .join("\n\n")
       .slice(-60000);
   }
@@ -705,31 +796,27 @@ export class ChatPanel {
     this.post({ type: "appendMessage", message: compacted });
   }
 
-  /** 生效的思维强度：优先用户选择，其次 settings 默认。 */
-  private effectiveEffort(): string | undefined {
-    return this.selection?.reasoningEffort ?? readDefaultEffort();
+  /** 生效的思维强度：优先用户选择，其次 settings 默认（可传快照避免运行中切换污染）。 */
+  private effectiveEffort(selection: ModelSelection | undefined = this.selection): string | undefined {
+    return selection?.reasoningEffort ?? readDefaultEffort();
   }
 
   statusLine(): string {
     const sel = this.selection;
-    const provider = sel?.provider ? providerDisplayName(sel.provider) : "（DSH 默认）";
-    const model = sel?.model ?? "（DSH 默认）";
-    const effort = this.effectiveEffort() ?? "未设置";
-    const skills = this.enabledSkills.length ? this.enabledSkills.join("、") : "无";
+    const provider = sel?.provider ? providerDisplayName(sel.provider) : t("（DSH 默认）", " (DSH default)");
+    const model = sel?.model ?? t("（DSH 默认）", " (DSH default)");
+    const effort = this.effectiveEffort() ?? t("未设置", "not set");
+    const skills = this.enabledSkills.length ? this.enabledSkills.join(t("、", ", ")) : t("无", "none");
     const mode = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
     const usage = this.lastUsage
-      ? `\n用量：输入 ${fmtNum(this.lastUsage.input)} · 输出 ${fmtNum(this.lastUsage.output)} · 缓存读 ${fmtNum(this.lastUsage.cacheRead)} · 推理 ${fmtNum(this.lastUsage.reasoning)} token` +
+      ? "\n" +
+        t("用量", "Usage") +
+        `：${t("输入", "input")} ${fmtNum(this.lastUsage.input)} · ${t("输出", "output")} ${fmtNum(this.lastUsage.output)} · ${t("缓存读", "cache read")} ${fmtNum(this.lastUsage.cacheRead)} · ${t("推理", "reasoning")} ${fmtNum(this.lastUsage.reasoning)} token` +
         (this.lastUsage.cacheRead + this.lastUsage.input > 0
-          ? ` · 缓存命中 ${Math.round((this.lastUsage.cacheRead / (this.lastUsage.cacheRead + this.lastUsage.input)) * 100)}%`
+          ? ` · ${t("缓存命中", "cache hit")} ${Math.round((this.lastUsage.cacheRead / (this.lastUsage.cacheRead + this.lastUsage.input)) * 100)}%`
           : "")
       : "";
-    return `提供商：${provider}\n模型：${model}（思维强度 ${effort}）\n沙箱模式：${mode}\n已启用技能：${skills}${usage}`;
-  }
-
-  /** 当前模型选择对应的 --patch 文件（无选择时 undefined）。 */
-  private currentModelPatch(): string | undefined {
-    if (!this.selection) return undefined;
-    return writeModelPatch(this.globalStorageDir, this.folderHash, this.selection);
+    return `${t("提供商", "Provider")}：${provider}\n${t("模型", "Model")}：${model}（${t("思维强度", "effort")} ${effort}）\n${t("沙箱模式", "Sandbox")}：${mode}\n${t("已启用技能", "Enabled skills")}：${skills}${usage}`;
   }
 
   /** 在聊天中展示项目长期记忆。 */
@@ -763,28 +850,35 @@ export class ChatPanel {
     this.reveal();
   }
 
-  private buildTaskText(): string {
+  /** 用指定的会话/目录/上下文/模型/技能快照组装任务文本（供 executeTask 在 await 前取快照）。 */
+  private buildTaskTextFor(
+    session: ChatSession,
+    folder: vscode.WorkspaceFolder,
+    contextBlocks: ContextBlock[],
+    selection: ModelSelection | undefined,
+    enabledSkills: string[]
+  ): string {
     const cfg = vscode.workspace.getConfiguration("dsh-harness-vscode");
     const historyN = cfg.get<number>("historyMessages", 20);
     const maxChars = cfg.get<number>("maxMessageChars", 8000);
 
     const extraSections: string[] = [];
-    const sel = this.selection;
+    const sel = selection;
     if (sel?.provider && sel.model) {
       extraSections.push(
         t("本会话模型配置：提供商 {0}，模型 {1}", "Session model config: provider {0}, model {1}")
           .replace("{0}", sel.provider).replace("{1}", sel.model) +
-          (this.effectiveEffort() ? t("，思维强度 {0}", ", effort {0}").replace("{0}", this.effectiveEffort()!) : "")
+          (this.effectiveEffort(sel) ? t("，思维强度 {0}", ", effort {0}").replace("{0}", this.effectiveEffort(sel)!) : "")
       );
     }
-    if (this.enabledSkills.length > 0) {
-      extraSections.push(t("本会话已启用技能：{0}（按需通过技能工具加载）", "Skills enabled in this session: {0} (load on demand via the skill tool)").replace("{0}", this.enabledSkills.join(t("、", ", "))));
+    if (enabledSkills.length > 0) {
+      extraSections.push(t("本会话已启用技能：{0}（按需通过技能工具加载）", "Skills enabled in this session: {0} (load on demand via the skill tool)").replace("{0}", enabledSkills.join(t("、", ", "))));
     }
 
     return buildTaskText(
-      this.folder.uri.fsPath,
-      this.session,
-      this.contextBlocks,
+      folder.uri.fsPath,
+      session,
+      contextBlocks,
       this.memory,
       historyN,
       maxChars,
@@ -832,6 +926,7 @@ export class ChatPanel {
   }
 
   private dispose(): void {
+    this.disposed = true;
     this.abort?.abort();
     for (const d of this.disposables) {
       d.dispose();

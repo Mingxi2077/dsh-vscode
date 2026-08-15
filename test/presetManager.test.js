@@ -46,6 +46,19 @@ test("readPatch：文件不存在时返回默认模板", () => {
   }
 });
 
+test("enablePreset：flow 风格已含条目时拒绝写入（防止把文件改成非法 YAML）", () => {
+  const { root, file } = tmpPatch('[{"id": "some-plugin", "config": {}}]\n');
+  try {
+    const res = enablePreset("auto-compact", file);
+    assert.equal(res.ok, false);
+    assert.match(res.message, /flow-style/i);
+    const raw = fs.readFileSync(file, "utf8");
+    assert.ok(raw.includes('"some-plugin"'), "原文件不得被改动");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("enablePreset：从空 patch 写入条目", () => {
   const { root, file } = tmpPatch(undefined);
   try {

@@ -1,4 +1,4 @@
-import { spawn, execFile } from "child_process";
+import { spawn, execFile, ChildProcessWithoutNullStreams } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { t, tf } from "./i18n";
@@ -46,7 +46,12 @@ function execFileAsync(
   timeoutMs = 15000
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { windowsHide: true, timeout: timeoutMs }, (err, stdout, stderr) => {
+    // Windows 的 .cmd/.bat 不能直接被 CreateProcess 启动（spawn EINVAL），
+    // 必须经 ComSpec 转发。
+    const isWinShim = process.platform === "win32" && /\.(cmd|bat)$/i.test(file);
+    const exe = isWinShim ? process.env.ComSpec || "cmd.exe" : file;
+    const exeArgs = isWinShim ? ["/d", "/s", "/c", file, ...args] : args;
+    execFile(exe, exeArgs, { windowsHide: true, timeout: timeoutMs }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(tf(t("{0} 执行失败: {1}", "{0} failed: {1}"), file, (stderr || err.message).trim())));
       } else {
@@ -54,6 +59,14 @@ function execFileAsync(
       }
     });
   });
+}
+
+/** 限制子进程输出缓冲：超限时截断并标记，防止异常进程把扩展宿主内存撑爆。 */
+function capAppend(current: string, chunk: string, max: number): string {
+  if (current.length >= max) return current;
+  const next = current + chunk;
+  if (next.length <= max) return next;
+  return next.slice(0, max) + t("\n…(输出过长，已截断)", "\n…(output too long, truncated)");
 }
 
 async function firstLine(cmd: string, args: string[]): Promise<string | undefined> {
@@ -77,6 +90,28 @@ async function resolveNodeBinary(): Promise<string> {
   return process.execPath;
 }
 
+function isShimLike(p: string): boolean {
+  return process.platform === "win32" && /\.(cmd|bat|ps1)$/i.test(p);
+}
+
+/** 尝试从 Windows shim 同目录解析 dsh 包内入口（shim 所在目录是全局 node prefix）。 */
+function entryForShim(shim: string): string {
+  return path.join(path.dirname(shim), ENTRY_REL);
+}
+
+/** 把任务文本限制在平台可接受的命令行长度内（Windows CreateProcess 上限约 32k）。 */
+export function capTaskText(
+  task: string,
+  maxChars = 28000,
+  platform: NodeJS.Platform = process.platform
+): string {
+  if (platform !== "win32" || task.length <= maxChars) return task;
+  return (
+    task.slice(0, maxChars) +
+    t("\n…（任务文本过长，已由扩展截断）", "\n…(task text too long, truncated by the extension)")
+  );
+}
+
 /** 从 PATH 定位 dsh，并尽量解析出真实的 node 入口以规避 Windows cmd.exe 引号问题。 */
 export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
   if (cliPath && cliPath.trim().length > 0) {
@@ -86,6 +121,20 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
     }
     if (p.toLowerCase().endsWith(".js")) {
       return { kind: "entry", node: await resolveNodeBinary(), entry: p, source: "配置(dsh-harness-vscode.cliPath)" };
+    }
+    if (isShimLike(p)) {
+      // .cmd/.bat/.ps1 不能直接 spawn（EINVAL），从同目录解析真实入口；
+      // 解析不到时给出明确指引，避免把 shim 交给 spawn 后必然失败。
+      const entry = entryForShim(p);
+      if (fs.existsSync(entry)) {
+        return { kind: "entry", node: await resolveNodeBinary(), entry, source: `配置 shim 解析(${p})` };
+      }
+      throw new Error(
+        t(
+          `dsh-harness-vscode.cliPath 指向了 shim（${p}），但同目录找不到 ${entry}。请把 cliPath 配成该 lib/bin.js 文件。`,
+          `dsh-harness-vscode.cliPath points to a shim (${p}), but ${entry} was not found next to it. Point cliPath to that lib/bin.js file instead.`
+        )
+      );
     }
     return { kind: "command", command: p, source: "配置(dsh-harness-vscode.cliPath)" };
   }
@@ -97,14 +146,15 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
     // 包入口固定为 <prefix>/node_modules/@deepseek-ai/dsh/lib/bin.js。
     const shim = await firstLine("where.exe", ["dsh"]);
     if (shim) {
-      const prefix = path.dirname(shim);
-      const entry = path.join(prefix, ENTRY_REL);
+      const entry = entryForShim(shim);
       if (fs.existsSync(entry)) {
         return { kind: "entry", node: await resolveNodeBinary(), entry, source: `PATH 解析(${shim})` };
       }
-      return { kind: "command", command: shim, source: `PATH 解析(${shim})` };
+      if (!isShimLike(shim)) {
+        return { kind: "command", command: shim, source: `PATH 解析(${shim})` };
+      }
     }
-    // 兜底：pnpm 全局等非标准布局下 where 拿不到，尝试常见全局位置。
+    // 兜底：pnpm 全局等非标准布局下 where 拿不到或 shim 无法解析入口，尝试常见全局位置。
     const npmRoot = await firstLine("npm.cmd", ["root", "-g"]);
     if (npmRoot) {
       const entry = path.join(npmRoot.trim(), ENTRY_REL);
@@ -131,38 +181,53 @@ export async function resolveCli(cliPath?: string): Promise<ResolvedCli> {
  * entry 模式附加 --expose-internals：DSH 的 HMR 服务在 node < 24 时必须带该 flag
  * 才能访问内部模块加载器（node >= 24 可走原生插件兜底，带上 flag 无副作用）。 */
 export function buildSpawnArgs(cli: ResolvedCli, extraArgs: string[], task: string): string[] {
-  const base = ["--profile", "headless", ...extraArgs, task];
+  const base = ["--profile", "headless", ...extraArgs, capTaskText(task)];
   if (cli.kind === "entry") {
     return ["--expose-internals", cli.entry, ...base];
   }
   return base;
 }
 
+/** 统一启动 CLI 子进程（entry 模式用 node + 入口；command 模式直接可执行文件）。
+ * 调用方目前全部使用 stdio: ["ignore","pipe","pipe"]，因此按非空流类型返回。 */
+export function spawnCliChild(
+  cli: ResolvedCli,
+  args: string[],
+  options: Parameters<typeof spawn>[2]
+): ChildProcessWithoutNullStreams {
+  return spawn(cli.kind === "entry" ? cli.node : cli.command, args, options) as ChildProcessWithoutNullStreams;
+}
+
 /** 查询 dsh 版本（launcher 的 --version），用于环境自检。 */
 export function runCliVersion(cli: ResolvedCli): Promise<string> {
   return new Promise((resolve, reject) => {
     const args = cli.kind === "entry" ? [cli.entry, "--version"] : ["--version"];
-    const child = spawn(cli.kind === "entry" ? cli.node : cli.command, args, {
+    const child = spawnCliChild(cli, args, {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error(t("查询 dsh 版本超时", "Timed out querying the dsh version")));
     }, 15000);
     child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
+      stdout = capAppend(stdout, chunk.toString("utf8"), 64 * 1024);
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
+      stderr = capAppend(stderr, chunk.toString("utf8"), 64 * 1024);
     });
     child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       reject(new Error(tf(t("无法启动 dsh：{0}", "Failed to launch dsh: {0}"), err.message)));
     });
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       if (code === 0) {
         resolve(stdout.trim());
@@ -197,7 +262,7 @@ export function runDsh(
       resolve({ stdout: "", stderr: "", code: null, signal: "SIGTERM", timedOut: false });
       return;
     }
-    const child = spawn(cli.kind === "entry" ? cli.node : cli.command, args, {
+    const child = spawnCliChild(cli, args, {
       cwd: options.cwd,
       env: options.env,
       windowsHide: true,
@@ -208,11 +273,13 @@ export function runDsh(
     let stderr = "";
     let timedOut = false;
     let settled = false;
+    let graceTimer: NodeJS.Timeout | undefined;
 
     const finish = (code: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (graceTimer) clearTimeout(graceTimer);
       options.signal?.removeEventListener("abort", onAbort);
       resolve({ stdout, stderr, code, signal, timedOut });
     };
@@ -222,20 +289,33 @@ export function runDsh(
     };
 
     options.signal?.addEventListener("abort", onAbort);
+    // 竞态防御：signal 可能在“spawn 前检查”与 addEventListener 之间的窗口内被中止——
+    // 此时 listener 不会触发，补一次检查确保子进程仍被杀。
+    if (options.signal?.aborted) {
+      child.kill();
+    }
 
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
+      // 宽限期后强制结束，避免子进程吞掉 kill 导致 Promise 永久挂起
+      graceTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // 已退出则忽略
+        }
+      }, 3000);
     }, options.timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
+      stdout = capAppend(stdout, chunk.toString("utf8"), 2 * 1024 * 1024);
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
+      stderr = capAppend(stderr, chunk.toString("utf8"), 256 * 1024);
     });
     child.on("error", (err) => {
-      stderr += tf(t("spawn 失败: {0}", "spawn failed: {0}"), err.message) + "\n";
+      stderr = capAppend(stderr, tf(t("spawn 失败: {0}", "spawn failed: {0}"), err.message) + "\n", 256 * 1024);
       finish(null, null);
     });
     child.on("close", (code, signal) => {

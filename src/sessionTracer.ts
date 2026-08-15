@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { StringDecoder } from "string_decoder";
 
 /** 归一化后的流式进度消息（发送给 Webview 展示思维链 / 工具调用）。 */
 export type ProgressMessage =
@@ -96,10 +97,11 @@ export class SessionTracer {
     }
   }
 
-  /** 轮询等待 spawn 之后新建的 session.jsonl（上限 30s）。 */
+  /** 轮询等待 spawn 之后新建的 session.jsonl（上限 30s）。
+   * finish() 一旦被调用（dsh 已退出）就立即停止等待，避免任务失败时白白拖满 30s。 */
   private async waitForLogFile(signal: AbortSignal): Promise<string | undefined> {
     const deadline = Date.now() + 30000;
-    while (!signal.aborted && Date.now() < deadline) {
+    while (!signal.aborted && !this.finished && Date.now() < deadline) {
       const now = new Set(this.listLogFiles());
       for (const f of now) {
         if (!this.snapshot.has(f)) {
@@ -116,7 +118,7 @@ export class SessionTracer {
     return undefined;
   }
 
-  /** 从偏移继续读取追加行并解析。 */
+  /** 从偏移继续读取追加行并解析（增量读取，避免长会话 O(n²) 全文件重读）。 */
   private async tail(
     file: string,
     onMessage: (msg: ProgressMessage) => void,
@@ -124,25 +126,32 @@ export class SessionTracer {
   ): Promise<void> {
     let offset = 0;
     let buffer = "";
+    // StringDecoder 处理跨追加边界被拆开的 UTF-8 多字节字符
+    let decoder = new StringDecoder("utf8");
 
-    while (!signal.aborted) {
-      let data: Buffer | undefined;
+    const readIncrement = (): string => {
+      const fd = fs.openSync(file, "r");
       try {
-        data = fs.readFileSync(file);
-      } catch {
-        // 文件暂时不可读（写入中/重命名），稍后重试
-        await sleep(150);
-        continue;
+        const stat = fs.fstatSync(fd);
+        if (stat.size < offset) {
+          // 文件被截断/重建：从头重读
+          offset = 0;
+          buffer = "";
+          decoder = new StringDecoder("utf8");
+        }
+        if (stat.size <= offset) return "";
+        const len = stat.size - offset;
+        const buf = Buffer.allocUnsafe(len);
+        const bytes = fs.readSync(fd, buf, 0, len, offset);
+        offset += bytes;
+        return decoder.write(buf.subarray(0, bytes));
+      } finally {
+        fs.closeSync(fd);
       }
-      if (data.length < offset) {
-        // 文件被截断/重建：从头重读
-        offset = 0;
-        buffer = "";
-      }
-      const chunk = data.toString("utf8", offset);
-      offset = data.length;
-      buffer += chunk;
+    };
 
+    const consume = (text: string): void => {
+      buffer += text;
       let nl: number;
       while ((nl = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, nl).trim();
@@ -154,25 +163,24 @@ export class SessionTracer {
           onMessage(msg);
         }
       }
+    };
+
+    while (!signal.aborted) {
+      try {
+        consume(readIncrement());
+      } catch {
+        // 文件暂时不可读（写入中/重命名），稍后重试
+        await sleep(150);
+        continue;
+      }
 
       if (signal.aborted) return;
       if (this.finished) {
         // 排空剩余记录（含未换行的残行）后结束
         await sleep(300);
         try {
-          const data = fs.readFileSync(file);
-          const rest = buffer + data.toString("utf8", offset);
-          buffer = "";
-          for (const line of rest.split("\n")) {
-            const trimmed = line.trim();
-            if (trimmed) {
-              const msg = this.parseLine(trimmed);
-              if (msg) {
-                this.eventsParsed += 1;
-                onMessage(msg);
-              }
-            }
-          }
+          consume(readIncrement());
+          consume(decoder.end());
         } catch {
           // 忽略收尾读取失败
         }

@@ -111,6 +111,23 @@ test("writeModelPatch 生成 settings 覆盖 + 指向它的补丁", () => {
   }
 });
 
+test("writeModelPatch：模型名含 YAML 特殊字符时安全加引号（防非法 YAML/注入）", () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-mdl-"));
+  try {
+    const settings = path.join(root, "src-settings.yaml");
+    fs.writeFileSync(settings, "agent-default-model:\n  provider: x\n  model: y\n", "utf8");
+    const file = writeModelPatch(root, "hash", { provider: "lmuai", model: "foo: bar\nbaz" }, settings);
+    assert.ok(file, "补丁文件应生成");
+    const raw = fs.readFileSync(file, "utf8");
+    const settingsFile = raw.match(/path:\s*(\S+)/)?.[1];
+    assert.ok(settingsFile, "覆盖文件路径应存在");
+    const over = fs.readFileSync(settingsFile, "utf8");
+    assert.ok(over.includes('model: "foo: bar\\nbaz"'), "含冒号/换行的模型名必须双引号转义，实际: " + over);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("buildTaskText 包含会话配置与技能段", () => {
   const session = {
     id: "s1",
