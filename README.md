@@ -64,6 +64,7 @@ If `dsh` is not on PATH, set its path manually in the `dsh-harness-vscode.cliPat
 | `/provider` | Switch model provider: **built-in one-click** (OpenAI / Anthropic / Google / Mistral / Groq / OpenRouter / xAI / Together etc., add API key and go) or the **custom provider wizard** (self-hosted gateway, OpenAI-compatible or Anthropic protocol); API keys live in the system keychain |
 | `/model` | Switch model for the current provider |
 | `/effort` | Switch reasoning effort (off/low/medium/high/max; use off for non-reasoning models) |
+| `/mode` | Switch DSH agent mode: **Standard / PTC / Minimal / Creator** (the same built-in agent presets as the DSH Web UI; Creator warns before enabling) |
 | `/skills` | List and enable skills (`~/.dsh/skills` or `<project>/.dsh/skills`, one directory per skill with SKILL.md) |
 | `/compact` | Compact the session into a summary and replace history |
 | `/status` | Show current provider/model/effort/skills/usage |

@@ -7,6 +7,7 @@ import { stableHash } from "./sessionStore";
 import { ProjectMemory } from "./memory";
 import { PluginWatch } from "./pluginWatch";
 import { isAnyTaskActive, setTaskActive } from "./taskGuard";
+import { resolveAgentModePatch } from "./agentModes";
 import { isZh, t, tf } from "./i18n";
 
 /**
@@ -99,6 +100,11 @@ function registerParticipant(
       modelPatch = undefined;
     }
     if (modelPatch) extraArgs.push("--patch", modelPatch);
+    if (selection?.mode) {
+      const modeRes = resolveAgentModePatch(cli, selection.mode);
+      if (modeRes.patch) extraArgs.push("--patch", modeRes.patch);
+      else log?.(`@dsh-agent mode patch unavailable: ${modeRes.error}`);
+    }
 
     const args = buildSpawnArgs(cli, extraArgs, taskText);
     const env = await envProvider();

@@ -204,6 +204,26 @@ test("loadSelection：损坏/类型不对的状态文件按无选择处理", () 
   }
 });
 
+test("loadSelection：Agent 模式持久化与非法 mode 清理", () => {
+  const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-mdl-"));
+  try {
+    const dir = path.join(root, "model-selection");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "mode.json");
+    // 只选模式、还没选模型的状态也应能载入
+    fs.writeFileSync(file, JSON.stringify({ provider: "", model: "", mode: "code" }), "utf8");
+    const onlyMode = loadSelection(root, "mode");
+    assert.equal(onlyMode.mode, "code");
+    assert.equal(onlyMode.model, "");
+    // 手改非法 mode 应被清掉
+    fs.writeFileSync(file, JSON.stringify({ provider: "p", model: "m", mode: "nope" }), "utf8");
+    const invalid = loadSelection(root, "mode");
+    assert.equal(invalid.mode, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("buildTaskText：zh=false 时输出英文任务模板（i18n 防回归）", () => {
   const session = {
     id: "s1",

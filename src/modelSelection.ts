@@ -3,12 +3,15 @@ import * as path from "path";
 import { dshHomePath } from "./dshHome";
 import { yamlScalar } from "./settingsEditor";
 import { t } from "./i18n";
+import { AgentModeId, isValidAgentMode } from "./agentModes";
 
-/** 用户为当前工作区选择的模型配置（provider/model/思维强度）。 */
+/** 用户为当前工作区选择的模型配置（provider/model/思维强度/Agent 预设模式）。 */
 export interface ModelSelection {
   provider: string;
   model: string;
   reasoningEffort?: string;
+  /** DSH Agent 预设：标准 / PTC / 极简 / 创造（缺省 = 使用 headless 默认组装）。 */
+  mode?: AgentModeId;
 }
 
 /** 一个可用的提供商。 */
@@ -232,10 +235,14 @@ export function loadSelection(globalStorageDir: string, folderHash: string): Mod
     const parsed = JSON.parse(raw) as ModelSelection;
     // 状态文件可能被手改/损坏：字段类型不对时按无选择处理，避免后续 YAML 转义崩溃
     if (typeof parsed.provider !== "string" || typeof parsed.model !== "string") return undefined;
-    if (!parsed.provider || !parsed.model) return undefined;
     if (parsed.reasoningEffort !== undefined && typeof parsed.reasoningEffort !== "string") {
       parsed.reasoningEffort = undefined;
     }
+    if (parsed.mode !== undefined && !isValidAgentMode(parsed.mode)) {
+      parsed.mode = undefined;
+    }
+    // 允许“只选了 Agent 模式还没选模型”的状态（模型补丁会单独按 provider+model 判断）
+    if (!parsed.provider && !parsed.model && !parsed.reasoningEffort && !parsed.mode) return undefined;
     return parsed;
   } catch {
     return undefined;

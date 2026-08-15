@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.0 (2026-08-15)
+
+### Added — DSH built-in Agent modes
+
+- **`/mode` command** brings DSH's four built-in agent presets into the extension:
+  - **标准模式 / Standard** — full coding agent (editing, shell, search, Skills, plans, goals, subagents, workflows)
+  - **PTC 模式 / PTC** — Standard plus the Code Mode SDK: the model composes multi-step actions as one TypeScript program
+  - **极简模式 / Minimal** — fixed-prompt two-tool agent (persistent bash + str_replace_editor)
+  - **创造模式 / Creator** — Standard plus runtime inspection, plugin experiments and preset-authoring guidance (with a prominent security warning)
+- Modes are resolved from the installed DSH's `config/agent-presets/<id>/agent.cordis.yml` (follows DSH upgrades), applied as a `--patch` overlay — verified end-to-end for all four modes against real headless tasks.
+- Mode is persisted per workspace alongside provider/model/effort; shown in the input usage bar, `/status`, and the sidebar. Provider/model/effort changes preserve the selected mode.
+- `@dsh-agent` and `/compact` also honor the selected mode. The compatibility self-test intentionally runs with the default composition.
+
+### Fixed
+
+- Session `loadSelection` now supports a mode-only selection (mode chosen before a model) and strips hand-edited invalid mode ids.
+- README (EN/ZH) slash-command tables updated with `/mode`.
+
 ## 0.9.12 (2026-08-15)
 
 ### Fixed（adversarial user-operation round）

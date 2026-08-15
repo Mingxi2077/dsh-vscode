@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { loadSelection, readDefaultEffort } from "./modelSelection";
+import { agentModeById } from "./agentModes";
 import { ProjectMemory } from "./memory";
 import { stableHash } from "./sessionStore";
 import { t } from "./i18n";
@@ -51,8 +52,9 @@ class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
     const items: StatusItem[] = [];
     const folder = vscode.workspace.workspaceFolders?.[0];
     const sel = folder ? loadSelection(this.globalStorageDir, stableHash(folder.uri.fsPath)) : undefined;
-    const mode = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
+    const sandbox = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
     const mem = folder ? new ProjectMemory(folder.uri.fsPath) : undefined;
+    const modeInfo = agentModeById(sel?.mode);
 
     items.push(new StatusItem(`${t("模型", "Model")}：${sel?.model ?? t("DSH 默认", "DSH default")}`, { icon: "symbol-method" }));
     items.push(
@@ -60,7 +62,12 @@ class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
         icon: "symbol-property",
       })
     );
-    items.push(new StatusItem(`${t("沙箱", "Sandbox")}：${mode}`, { icon: "shield" }));
+    items.push(
+      new StatusItem(`${t("Agent 模式", "Agent mode")}：${modeInfo ? t(modeInfo.name, modeInfo.nameEn) : t("默认组装", "default composition")}`, {
+        icon: "symbol-class",
+      })
+    );
+    items.push(new StatusItem(`${t("沙箱", "Sandbox")}：${sandbox}`, { icon: "shield" }));
     items.push(new StatusItem(mem?.exists() ? t("记忆：已记录", "Memory: set") : t("记忆：空", "Memory: empty"), { icon: "note" }));
     items.push(new StatusItem(`${t("扩展", "Extension")}：v${currentVersion()}`, { icon: "versions" }));
     items.push(new StatusItem("", {}));

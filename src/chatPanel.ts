@@ -24,6 +24,7 @@ import {
 import { refreshSidebarStatus } from "./sidebar";
 import { resolveExistingInsideRoot } from "./pathSafety";
 import { isAnyTaskActive, setTaskActive } from "./taskGuard";
+import { agentModeById, resolveAgentModePatch } from "./agentModes";
 import { t, tf, isZh } from "./i18n";
 
 /** 用户在输入区上方挂载的上下文块（选中代码 / 文件片段）。 */
@@ -424,6 +425,7 @@ export class ChatPanel {
       busy: this.busy,
       folder: this.folder.uri.fsPath,
       selection: this.selection,
+      mode: this.selection?.mode,
       effort: this.effectiveEffort(),
       usage: this.lastUsage,
       skills: this.enabledSkills,
@@ -555,6 +557,26 @@ export class ChatPanel {
       if (modelPatch) {
         // 附加模型选择补丁（/provider /model /effort）
         extraArgs.push("--patch", modelPatch);
+      }
+      if (selection?.mode) {
+        // 附加 DSH Agent 预设（标准 / PTC / 极简 / 创造）：直接叠加预设目录的 agent.cordis.yml
+        const modeRes = resolveAgentModePatch(cli, selection.mode);
+        if (modeRes.patch) {
+          extraArgs.push("--patch", modeRes.patch);
+        } else if (modeRes.error) {
+          const modeInfo = agentModeById(selection.mode);
+          this.log?.(`agent mode patch unavailable: ${modeRes.error}`);
+          this.postIfCurrent(taskSession, {
+            type: "appendMessage",
+            message: this.systemMessage(
+              tf(
+                t("警告：{0}的预设文件不可用（{1}），本次任务将按默认组装运行。", "Warning: the {0} preset file is unavailable ({1}); this task will run with the default composition."),
+                modeInfo ? t(modeInfo.name, modeInfo.nameEn) : selection.mode,
+                modeRes.error
+              )
+            ),
+          });
+        }
       }
       const args = buildSpawnArgs(cli, extraArgs, taskText);
       const env = await this.envProvider();
@@ -787,6 +809,11 @@ export class ChatPanel {
       const extraArgs = normalizeExtraArgs(cfg.get("extraArgs", []));
       extraArgs.push("--patch", path.join(this.extensionPath, "patch", "stream.patch.yml"));
       if (modelPatch) extraArgs.push("--patch", modelPatch);
+      if (selection?.mode) {
+        const modeRes = resolveAgentModePatch(cli, selection.mode);
+        if (modeRes.patch) extraArgs.push("--patch", modeRes.patch);
+        else this.log?.(`runHeadlessTask mode patch unavailable: ${modeRes.error}`);
+      }
       const args = buildSpawnArgs(cli, extraArgs, task);
       const env = await this.envProvider();
       const result = await runDsh(cli, args, {
@@ -851,7 +878,9 @@ export class ChatPanel {
     const model = sel?.model ?? t("（DSH 默认）", " (DSH default)");
     const effort = this.effectiveEffort() ?? t("未设置", "not set");
     const skills = this.enabledSkills.length ? this.enabledSkills.join(t("、", ", ")) : t("无", "none");
-    const mode = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
+    const sandbox = vscode.workspace.getConfiguration("dsh-harness-vscode").get<string>("permissionMode", "workspace-write");
+    const modeInfo = agentModeById(sel?.mode);
+    const agentMode = modeInfo ? t(modeInfo.name, modeInfo.nameEn) : t("默认组装", "default composition");
     const usage = this.lastUsage
       ? "\n" +
         t("用量", "Usage") +
@@ -860,7 +889,7 @@ export class ChatPanel {
           ? ` · ${t("缓存命中", "cache hit")} ${Math.round((this.lastUsage.cacheRead / (this.lastUsage.cacheRead + this.lastUsage.input)) * 100)}%`
           : "")
       : "";
-    return `${t("提供商", "Provider")}${colon}${provider}\n${t("模型", "Model")}${colon}${model}（${t("思维强度", "effort")} ${effort}）\n${t("沙箱模式", "Sandbox")}${colon}${mode}\n${t("已启用技能", "Enabled skills")}${colon}${skills}${usage}`;
+    return `${t("提供商", "Provider")}${colon}${provider}\n${t("模型", "Model")}${colon}${model}（${t("思维强度", "effort")} ${effort}）\n${t("Agent 模式", "Agent mode")}${colon}${agentMode}\n${t("沙箱模式", "Sandbox")}${colon}${sandbox}\n${t("已启用技能", "Enabled skills")}${colon}${skills}${usage}`;
   }
 
   /** 在聊天中展示项目长期记忆。 */
@@ -923,6 +952,14 @@ export class ChatPanel {
         t("本会话模型配置：提供商 {0}，模型 {1}", "Session model config: provider {0}, model {1}")
           .replace("{0}", sel.provider).replace("{1}", sel.model) +
           (this.effectiveEffort(sel) ? t("，思维强度 {0}", ", effort {0}").replace("{0}", this.effectiveEffort(sel)!) : "")
+      );
+    }
+    const modeInfo = agentModeById(sel?.mode);
+    if (modeInfo) {
+      extraSections.push(
+        t("本会话 Agent 模式：{0}（{1}）", "Session agent mode: {0} ({1})")
+          .replace("{0}", t(modeInfo.name, modeInfo.nameEn))
+          .replace("{1}", t(modeInfo.description, modeInfo.descriptionEn))
       );
     }
     if (enabledSkills.length > 0) {

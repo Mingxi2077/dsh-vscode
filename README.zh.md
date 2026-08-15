@@ -62,6 +62,7 @@
 | `/provider` | 切换模型提供商：**官方内置一键接入**（OpenAI / Anthropic / Google / Mistral / Groq / OpenRouter / xAI / Together 等 16 个，填 API Key 即用）或「手动添加自定义提供商」向导（自建网关，OpenAI 兼容或 Anthropic 协议）；API Key 存系统密钥链 |
 | `/model` | 按当前提供商切换模型 |
 | `/effort` | 切换思维强度（off/low/medium/high/max；非推理模型请用 off） |
+| `/mode` | 切换 DSH Agent 模式：**标准 / PTC / 极简 / 创造**（与 DSH Web 端相同的四个内置 Agent 预设；创造模式会先弹安全确认） |
 | `/skills` | 列出并选择要启用的技能（`~/.dsh/skills` 或 `<项目>/.dsh/skills`，每技能一个目录含 SKILL.md） |
 | `/compact` | 把当前会话压缩成摘要并替换历史，释放上下文 |
 | `/status` | 查看当前提供商/模型/思维强度/技能/用量 |

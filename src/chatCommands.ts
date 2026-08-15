@@ -22,6 +22,7 @@ import {
   writeProviderToSettings,
 } from "./settingsEditor";
 import { listSkills } from "./skills";
+import { AGENT_MODES, AgentModeId } from "./agentModes";
 import { t, tf, isZh } from "./i18n";
 
 /** slash 命令需要的最小宿主能力。 */
@@ -59,6 +60,7 @@ export const SLASH_HELP_ZH = [
   "/provider         切换模型提供商（可输入 API Key）",
   "/model            切换模型",
   "/effort           切换思维强度 (off/low/medium/high/max)",
+  "/mode             选择 Agent 模式（标准 / PTC / 极简 / 创造）",
   "/skills           选择要启用的技能",
   "/compact          压缩当前会话为摘要（释放上下文）",
   "/status           查看当前配置与用量",
@@ -74,6 +76,7 @@ export const SLASH_HELP_EN = [
   "/provider         Switch model provider (can input API key)",
   "/model            Switch model",
   "/effort           Switch reasoning effort (off/low/medium/high/max)",
+  "/mode             Choose agent mode (Standard / PTC / Minimal / Creator)",
   "/skills           Choose enabled skills",
   "/compact          Compact the session into a summary",
   "/status           Show current config & usage",
@@ -133,6 +136,9 @@ export function handleSlashCommand(host: ChatCommandHost, raw: string): void {
       break;
     case "/effort":
       void pickEffort(host).catch((e) => reportAsyncError(host, e));
+      break;
+    case "/mode":
+      void pickAgentMode(host).catch((e) => reportAsyncError(host, e));
       break;
     case "/skills":
       void pickSkills(host).catch((e) => reportAsyncError(host, e));
@@ -271,6 +277,7 @@ async function selectProvider(host: ChatCommandHost, provider: ProviderInfo): Pr
     provider: provider.id,
     model: "",
     reasoningEffort: host.selection?.reasoningEffort,
+    mode: host.selection?.mode,
   };
   await host.setSelection(sel);
   host.post({
@@ -370,6 +377,7 @@ async function addCustomProvider(host: ChatCommandHost): Promise<void> {
     provider: id.trim(),
     model: models[0]?.id ?? "",
     reasoningEffort: host.selection?.reasoningEffort,
+    mode: host.selection?.mode,
   };
   await host.setSelection(sel);
   host.post({
@@ -427,6 +435,52 @@ async function pickEffort(host: ChatCommandHost): Promise<void> {
     message: host.systemMessage(
       tf(t("思维强度已切换：{0}", "Reasoning effort switched: {0}"), pick.effort) +
         (hasModel ? "" : " " + t("（尚未选择模型，需先 /model 才会随任务生效）", "(no model selected yet; run /model first for it to take effect)"))
+    ),
+  });
+}
+
+// ---------------------------------------------------------------- Agent 模式
+
+async function pickAgentMode(host: ChatCommandHost): Promise<void> {
+  const current = host.selection?.mode;
+  const items: (vscode.QuickPickItem & { mode?: AgentModeId })[] = [
+    { label: t("默认组装", "Default composition"), description: t("跟随 headless 默认插件组装", "Use the default headless composition"), mode: undefined },
+    ...AGENT_MODES.map((m) => ({
+      label: t(m.name, m.nameEn),
+      description: current === m.id ? t("当前", "current") : undefined,
+      detail: t(m.description, m.descriptionEn) + (m.warning ? ` ⚠ ${t(m.warning, m.warningEn ?? m.warning)}` : ""),
+      mode: m.id,
+    })),
+  ];
+  const pick = await vscode.window.showQuickPick(items, {
+    placeHolder: t("选择 Agent 模式（标准 / PTC / 极简 / 创造）", "Choose an agent mode (Standard / PTC / Minimal / Creator)"),
+    matchOnDetail: true,
+  });
+  if (!pick) return;
+
+  const selected = pick.mode;
+  const info = selected ? AGENT_MODES.find((m) => m.id === selected) : undefined;
+  if (info?.warning) {
+    const go = await vscode.window.showWarningMessage(
+      t(`启用「${info.name}」？${info.warning}`, `Enable "${info.nameEn}"? ${info.warningEn ?? info.warning}`),
+      { modal: true },
+      t("继续", "Continue")
+    );
+    if (go !== t("继续", "Continue")) return;
+  }
+
+  await host.setSelection({
+    provider: host.selection?.provider ?? DEEPSEEK_PROVIDER.id,
+    model: host.selection?.model ?? "",
+    reasoningEffort: host.selection?.reasoningEffort,
+    mode: selected,
+  });
+  host.post({
+    type: "appendMessage",
+    message: host.systemMessage(
+      selected
+        ? tf(t("Agent 模式已切换：{0}（{1}）。下次任务生效。", "Agent mode switched to {0} ({1}). Takes effect on the next task."), info ? t(info.name, info.nameEn) : selected, info ? t(info.description, info.descriptionEn) : "")
+        : t("Agent 模式已恢复为默认组装。", "Agent mode reset to the default composition.")
     ),
   });
 }

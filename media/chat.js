@@ -25,6 +25,7 @@
         goalLiveCreated: "🎯 目标已创建", goalLiveUpdated: "✏️ 目标已更新", goalLivePaused: "⏸ 目标已暂停",
         goalLiveResumed: "▶️ 目标已恢复", goalLiveCompleted: "✅ 目标已完成", goalLiveBlocked: "🚧 目标受阻",
         typing: "DSH 正在工作…", runningSec: "运行中 {n}s",
+        agentMode: "模式", modeStandard: "标准", modeCode: "PTC", modeMinimal: "极简", modeCordis: "创造",
       }
     : {
         emptyHint: "<strong>DSH Assistant</strong><br>Type a message and DSH works in your project." +
@@ -40,6 +41,7 @@
         model: "Model", input: "In", output: "Out", cache: "Cache", reasoning: "Reason",
         toolRunning: "running…", toolDone: "done",
         working: "DSH is working", turn: "turn {n}", step: "step {n}",
+        agentMode: "Mode", modeStandard: "Standard", modeCode: "PTC", modeMinimal: "Minimal", modeCordis: "Creator",
         todoDone: "Done", todoInProgress: "In progress", todoPending: "Todo",
         goalLiveCreated: "🎯 Goal created", goalLiveUpdated: "✏️ Goal updated", goalLivePaused: "⏸ Goal paused",
         goalLiveResumed: "▶️ Goal resumed", goalLiveCompleted: "✅ Goal completed", goalLiveBlocked: "🚧 Goal blocked",
@@ -258,22 +260,27 @@
     const bar = els.usageBar;
     if (!bar) return;
     const u = state.usage;
-    if (!u) {
+    const sel = state.selection;
+    const modeKey = sel && sel.mode ? ("mode" + sel.mode.charAt(0).toUpperCase() + sel.mode.slice(1)) : "";
+    if (!u && !(sel && sel.mode)) {
       bar.hidden = true;
       return;
     }
     const parts = [];
-    if (u.model) parts.push(t("model") + " " + u.model + (u.effort ? " · " + u.effort : ""));
-    else if (state.selection && state.selection.model) {
-      parts.push(t("model") + " " + state.selection.model + (state.effort ? " · " + state.effort : ""));
+    if (modeKey) parts.push(t("agentMode") + " " + (t(modeKey) || sel.mode));
+    if (u) {
+      if (u.model) parts.push(t("model") + " " + u.model + (u.effort ? " · " + u.effort : ""));
+      else if (sel && sel.model) {
+        parts.push(t("model") + " " + sel.model + (state.effort ? " · " + state.effort : ""));
+      }
+      parts.push(t("input") + " " + fmtNum(u.input));
+      parts.push(t("output") + " " + fmtNum(u.output));
+      if (u.cacheRead > 0) {
+        const total = u.cacheRead + u.input;
+        parts.push(t("cache") + " " + Math.round((u.cacheRead / total) * 100) + "%");
+      }
+      if (u.reasoning > 0) parts.push(t("reasoning") + " " + fmtNum(u.reasoning));
     }
-    parts.push(t("input") + " " + fmtNum(u.input));
-    parts.push(t("output") + " " + fmtNum(u.output));
-    if (u.cacheRead > 0) {
-      const total = u.cacheRead + u.input;
-      parts.push(t("cache") + " " + Math.round((u.cacheRead / total) * 100) + "%");
-    }
-    if (u.reasoning > 0) parts.push(t("reasoning") + " " + fmtNum(u.reasoning));
     bar.textContent = parts.join(" · ");
     bar.hidden = false;
   }
@@ -600,7 +607,7 @@
   function sendInput() {
     const text = els.input.value;
     if (!text.trim() || state.running || state.busy) return;
-    const cmdMatch = text.trim().match(/^\/(help|clear|memory|edit-memory|remember|context|provider|model|effort|skills|compact|status)(\s|$)/);
+    const cmdMatch = text.trim().match(/^\/(help|clear|memory|edit-memory|remember|context|provider|model|effort|mode|skills|compact|status)(\s|$)/);
     if (cmdMatch) {
       els.input.value = "";
       vscode.setState({ draft: "" });
