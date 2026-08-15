@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { isZh } from "./i18n";
 
 /** 项目记忆文件位置（工作区根目录下 .dsh/memory.md，与仓库共存、透明可版本化）。 */
 const MEMORY_REL = path.join(".dsh", "memory.md");
@@ -30,7 +31,7 @@ export class ProjectMemory {
   append(text: string): void {
     const dir = path.dirname(this.file());
     fs.mkdirSync(dir, { recursive: true });
-    const stamp = new Date().toLocaleString("zh-CN", { hour12: false });
+    const stamp = new Date().toLocaleString(isZh() ? "zh-CN" : "en-US", { hour12: false });
     const entry = `## ${stamp}\n${text.trim()}\n`;
     const existing = this.read().trim();
     fs.writeFileSync(this.file(), existing ? `${existing}\n${entry}` : entry, "utf8");
@@ -41,6 +42,6 @@ export class ProjectMemory {
     const content = this.read().trim();
     if (!content) return "";
     if (content.length <= maxChars) return content;
-    return content.slice(0, maxChars) + "\n…(记忆内容过长，已截断)";
+    return content.slice(0, maxChars) + (isZh() ? "\n…(记忆内容过长，已截断)" : "\n…(memory too long, truncated)");
   }
 }

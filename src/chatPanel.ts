@@ -732,7 +732,10 @@ export class ChatPanel {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(
         file,
-        "# 项目长期记忆\n\n在这里记录项目的关键约定、架构决策、常用命令等，DSH 每次任务会自动参考。\n",
+        t(
+          "# 项目长期记忆\n\n在这里记录项目的关键约定、架构决策、常用命令等，DSH 每次任务会自动参考。\n",
+          "# Project long-term memory\n\nRecord key conventions, architecture decisions, common commands, etc. DSH references this on every task.\n"
+        ),
         "utf8"
       );
     }
