@@ -59,7 +59,11 @@ test("capTaskText：win32 超长任务文本被截断并标记（防 Windows 命
   assert.equal(capTaskText("hello", 100, "win32"), "hello");
 });
 
-test("resolveCli：配置 .cmd shim 时解析同目录 lib/bin.js（避免 spawn EINVAL）", async () => {
+test("resolveCli：配置 .cmd shim 时解析同目录 lib/bin.js（避免 spawn EINVAL）", async (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows-only .cmd shim test");
+    return;
+  }
   const root = fs.mkdtempSync(path.join(__dirname, "..", ".test-tmp-cli-"));
   try {
     const shim = path.join(root, "dsh.cmd");
